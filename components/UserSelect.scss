@@ -1,0 +1,101 @@
+    .userSelect {
+      position: relative;
+      box-sizing: border-box;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: calc(70 / 1080 * 100vh) calc(86 / 1920 * 100vw) 0 calc(86 / 1920 * 100vw);
+
+      .title {
+        height: calc(50 / 1080 * 100vh);
+        width: 100%;
+
+        h3 {
+          font-size: calc(22 / 1080 * 100vh);
+          color: #65625f;
+          font-weight: 600;
+        }
+
+      }
+
+      .subTitle {
+        height: calc(50 / 1080 * 100vh);
+        width: 100%;
+        border-bottom: solid calc(1 / 1080 * 100vh) #f3f1ef;
+
+        h4 {
+          font-size: calc(17 / 1080 * 100vh);
+          color: #989491;
+          font-weight: 500;
+        }
+      }
+
+      .script {
+        padding-bottom: calc(100 / 1080 * 100vh);
+        max-height: 100%;
+        overflow-y: auto;
+
+        &::-webkit-scrollbar {
+          width: 0;
+        }
+      }
+
+      .scriptImg {
+        height: calc(244 / 1080 * 100vh);
+        width: calc(244 / 1920 * 100vw);
+        border-radius: calc(4 / 1080 * 100vh);
+        margin-top: calc(30 / 1080 * 100vh);
+        background-color: #d3d3d3;
+        overflow: hidden;
+
+        img {
+          height: 100%;
+          width: 100%;
+          display: block;
+          object-fit: cover;
+        }
+      }
+
+      .scriptText {
+        margin-top: calc(30 / 1080 * 100vh);
+
+        p {
+          font-size: calc(17 / 1080 * 100vh);
+          color: #222222;
+          text-align: justify;
+        }
+      }
+
+      .selectBtn {
+        position: absolute;
+        bottom: calc(52 / 1080 * 100vh);
+        left: 50%;
+        transform: translateX(-50%);
+        width: 76.5%;
+        height: calc(50 / 1080 * 100vh);
+        background-color: #faf8f5;
+        border: solid calc(2 / 1920 * 100vw) #cbbfb7;
+        border-radius: calc(2 / 1080 * 100vh);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+
+
+        h4 {
+          font-size: calc(17 / 1080 * 100vh);
+          color: #776353;
+          font-weight: 600;
+        }
+
+        &:hover {
+          background-color: #f5f4f2;
+          border-color: #b8a9a0;
+
+          h4 {
+            color: #5e4739;
+          }
+        }
+      }
+    }

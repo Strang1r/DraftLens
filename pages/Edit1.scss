@@ -1,0 +1,455 @@
+.edit1BackGround {
+  position: relative;
+  height: 100vh;
+  width: 100%;
+
+  .logo {
+    position: absolute;
+    left: calc(60 / 1920 * 100vw);
+    top: calc(40 / 1080 * 100vh);
+
+    img {
+      height: calc(20 / 1080 * 100vh);
+      width: calc(120 / 1920 * 100vw);
+    }
+  }
+
+  .paper {
+    display: flex;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: calc(98 / 1080 * 100vh);
+    width: calc(1288 / 1920 * 100vw);
+    height: calc(916 / 1080 * 100vh);
+    background-color: #fffffe;
+    border-radius: calc(2 / 1080 * 100vh);
+    border: solid calc(1 / 1920 * 100vw) #dcd7d4;
+    overflow: hidden;
+
+    .divider {
+      position: absolute;
+      top: 0;
+      left: 39%;
+      height: 100%;
+      width: calc(1 / 1920 * 100vw);
+      background-image: repeating-linear-gradient(to bottom,
+          rgba(189, 181, 170, 0.5),
+          rgba(189, 181, 170, 0.5) calc(6 / 1920 * 100vw),
+          transparent calc(2 / 1920 * 100vw),
+          transparent calc(14 / 1920 * 100vw));
+
+    }
+
+    .imgArea {
+      flex: 39%;
+      height: 100%;
+      position: relative;
+
+      .sceneOptions {
+
+        display: flex;
+        flex-direction: column;
+        position: absolute;
+        top: calc(222 / 1920 * 100vw);
+        right: calc(70 / 1920 * 100vw);
+
+        .sceneImg {
+          height: calc(322 / 1920 * 100vw);
+          width: calc(322 / 1920 * 100vw);
+          background-color: #fffaf6;
+          border-radius: calc(2 / 1080 * 100vh);
+          margin-bottom: calc(30 / 1080 * 100vh);
+          overflow: hidden;
+
+          img {
+            height: 100%;
+            width: 100%;
+            object-fit: cover;
+
+            opacity: 0;
+            transform: scale(1.04);
+            animation: imgFadeZoomIn 1s ease-out forwards;
+          }
+        }
+
+        .regenerateBtn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: calc(52 / 1080 * 100vh);
+          width: calc(320 / 1920 * 100vw);
+          background-color: #f8f7f5;
+          border: solid calc(1.5 / 1920 * 100vw) #cfc6c0;
+          border-radius: calc(2 / 1080 * 100vh);
+          transition: all 0.3s ease;
+          cursor: pointer;
+
+          &:hover {
+            background-color: #efece6;
+            border-color: #b8a9a0;
+
+            h5 {
+              color: #5e4739;
+            }
+          }
+
+          h5 {
+            font-size: calc(17 / 1080 * 100vh);
+            color: #776353;
+            font-weight: 600;
+
+            &::before {
+              font-family: 'iconfont';
+              content: '\e61b';
+              display: inline-block;
+              margin-right: calc(10 / 1920 * 100vw);
+              font-size: calc(18 / 1080 * 100vh);
+            }
+          }
+        }
+      }
+
+
+    }
+
+    .textArea {
+      position: relative;
+      flex: 61%;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+      box-sizing: border-box;
+      padding: calc(70 / 1080 * 100vh) calc(112 / 1920 * 100vw) calc(0 / 1080 * 100vh) calc(70 / 1920 * 100vw);
+
+      .sceneCount {
+        position: absolute;
+        top: calc(0 / 1080 * 100vh);
+        left: calc(0 / 1920 * 100vw);
+        height: calc(24 / 1080 * 100vh);
+        width: calc(65 / 1920 * 100vw);
+        background-color: #fbf8f3;
+        border-radius: calc(2 / 1080 * 100vh);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        p {
+          font-size: calc(13 / 1080 * 100vh);
+          color: #b5aca5;
+        }
+      }
+
+      .title,
+      .subTitle {
+        flex: 0 0 auto; // 固定高度，不参与撑开
+      }
+
+      .title {
+        height: calc(50 / 1080 * 100vh);
+        width: 100%;
+
+        h3 {
+          font-size: calc(22 / 1080 * 100vh);
+          color: #65625f;
+          font-weight: 600;
+
+          &:focus {
+            outline: none;
+          }
+
+          &::selection {
+            background: #f3e4d6;
+          }
+        }
+
+      }
+
+      .subTitle {
+        height: calc(70 / 1080 * 100vh);
+        width: 100%;
+        border-bottom: solid calc(1 / 1080 * 100vh) #f3f1ef;
+
+        h4 {
+          font-size: calc(17 / 1080 * 100vh);
+          color: #989491;
+          font-weight: 500;
+
+          // 过度动画
+          opacity: 0;
+          transform: translateX(calc(12 / 1920 * 100vw));
+          animation: slideInFromRight 0.8s ease-out forwards;
+
+          &:focus {
+            outline: none;
+          }
+
+          &::selection {
+            background: #f3e4d6;
+          }
+        }
+      }
+
+      .script {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+
+        &::-webkit-scrollbar {
+          width: 0;
+        }
+
+        /*     .scriptText {
+          margin-top: calc(40 / 1080 * 100vh);
+
+          &:focus {
+            outline: none;
+          }
+
+          p {
+            font-size: calc(17 / 1080 * 100vh);
+            color: #222222;
+            text-align: justify;
+            line-height: 1.8;
+            margin-bottom: calc(20 / 1080 * 100vh);
+
+            // 过度动画
+            opacity: 0;
+            transform: translateX(calc(25 / 1920 * 100vw));
+            animation: slideInFromRight 0.8s ease-out forwards;
+
+
+
+            &::selection {
+              background: #f3e4d6;
+            }
+          }
+
+          p:nth-child(1) {
+            animation-delay: 0.25s;
+          }
+
+          p:nth-child(2) {
+            animation-delay: 0.5s;
+          }
+
+          p:nth-child(3) {
+            animation-delay: 0.75s;
+          }
+
+          p:nth-child(4) {
+            animation-delay: 1s;
+          }
+
+          p:last-child {
+            margin-bottom: 0;
+          }
+        } */
+
+        .scriptText {
+          margin-top: calc(40 / 1080 * 100vh);
+          padding-bottom: calc(40 / 1080 * 100vh);
+          font-size: calc(17 / 1080 * 100vh);
+          color: #222222;
+          text-align: justify;
+          line-height: 2;
+
+          white-space: pre-wrap; // 关键：让 \n 显示成段落
+          outline: none;
+          animation: fadeIn 0.8s ease-out;
+
+          &::selection {
+            background: #f3e4d6;
+          }
+        }
+      }
+
+      .btnArea {
+        position: absolute;
+        top: calc(70 / 1080 * 100vh);
+        right: calc(112 / 1920 * 100vw);
+        height: calc(38 / 1080 * 100vh);
+        width: calc(110 / 1920 * 100vw);
+        display: flex;
+        justify-content: space-between;
+
+        .preBtn,
+        .nextBtn {
+          height: 100%;
+          width: calc(38 / 1920 * 100vw);
+          background-color: #f8f7f5;
+          cursor: pointer;
+          transition: all 0.3s ease;
+
+          --c: #776353;
+          --t: calc(2 / 1080 * 100vh);
+          /* 边框厚度 */
+          --dash: calc(8 / 1920 * 100vw);
+          /* 每段实线长度 */
+          --gap: calc(6 / 1920 * 100vw);
+          /* 间距 */
+
+          background:
+            /* top */
+            repeating-linear-gradient(to right,
+              var(--c) 0 var(--dash),
+              transparent var(--dash) calc(var(--dash) + var(--gap))) top / 100% var(--t) no-repeat,
+
+            /* bottom */
+            repeating-linear-gradient(to right,
+              var(--c) 0 var(--dash),
+              transparent var(--dash) calc(var(--dash) + var(--gap))) bottom / 100% var(--t) no-repeat,
+
+            /* left */
+            repeating-linear-gradient(to bottom,
+              var(--c) 0 var(--dash),
+              transparent var(--dash) calc(var(--dash) + var(--gap))) left / var(--t) 100% no-repeat,
+
+            /* right */
+            repeating-linear-gradient(to bottom,
+              var(--c) 0 var(--dash),
+              transparent var(--dash) calc(var(--dash) + var(--gap))) right / var(--t) 100% no-repeat,
+
+            /* fill */
+            #f8f7f5;
+
+          border-radius: calc(2 / 1080 * 100vh);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+
+          &.invalideBtn {
+            cursor: not-allowed !important;
+            opacity: 0.2 !important;
+          }
+
+          &:hover {
+            background-color: #ece9e3;
+          }
+        }
+
+        .nextBtn::after,
+        .preBtn::after {
+          font-family: 'iconfont';
+          content: '\e601';
+          font-size: calc(20 / 1080 * 100vh);
+          color: #776353;
+        }
+
+        .preBtn::after {
+          transform: rotate(180deg);
+        }
+      }
+    }
+  }
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 16, 14, 0.5); // 遮罩透明度
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+
+  &.open {
+    opacity: 1;
+  }
+
+  .modal {
+    box-sizing: border-box;
+    width: calc(666 / 1920 * 100vw);
+    height: calc(260 / 1080 * 100vh);
+    background: #fffefd;
+    border-radius: calc(2 / 1920 * 100vw);
+    padding: calc(40 / 1920 * 100vw) calc(46 / 1920 * 100vw);
+
+    h3 {
+      font-size: calc(20 / 1920 * 100vw);
+      color: #222;
+      font-weight: 600;
+      margin-bottom: calc(10 / 1920 * 100vw);
+    }
+
+    p {
+      color: #999;
+      font-size: calc(17 / 1920 * 100vw);
+
+    }
+  }
+
+  .modalActions {
+    display: flex;
+    gap: calc(26 / 1920 * 100vw);
+    justify-content: flex-end;
+    margin-top: calc(55 / 1080 * 100vh);
+  }
+
+  .cancelBtn {
+    background: transparent;
+    border: calc(1.5 / 1920 * 100vw) solid #bdb5aa;
+    color: #776353;
+
+    &:hover {
+      background-color: #f1f0ed;
+      border-color: #b8a9a0;
+    }
+  }
+
+  .confirmBtn {
+    background: #776353;
+    color: #fff;
+
+    &:hover {
+      background-color: #5e4739;
+    }
+
+    &.disabled {
+      pointer-events: none;
+      opacity: 0.6;
+    }
+  }
+
+  .cancelBtn,
+  .confirmBtn {
+    font-size: calc(17 / 1920 * 100vw);
+    height: calc(48 / 1080 * 100vh);
+    width: calc(120 / 1920 * 100vw);
+    border-radius: calc(2 / 1920 * 100vw);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.4s ease;
+    cursor: pointer;
+  }
+}
+
+@keyframes slideInFromRight {
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes imgFadeZoomIn {
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(calc(30 / 1920 * 100vw));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

@@ -1,0 +1,104 @@
+.final1BackGround {
+  position: relative;
+  height: 100vh;
+  width: 100%;
+
+  .logo {
+    position: absolute;
+    left: calc(60 / 1920 * 100vw);
+    top: calc(40 / 1080 * 100vh);
+
+    img {
+      height: calc(20 / 1080 * 100vh);
+      width: calc(120 / 1920 * 100vw);
+    }
+  }
+
+  .paper {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: calc(98 / 1080 * 100vh);
+    width: calc(1288 / 1920 * 100vw);
+    height: calc(916 / 1080 * 100vh);
+    background-color: #fffffe;
+    border-radius: calc(2 / 1080 * 100vh);
+    border: solid calc(1 / 1920 * 100vw) #dcd7d4;
+    box-sizing: border-box;
+    padding: calc(70 / 1080 * 100vh) calc(110 / 1920 * 100vw) calc(0 / 1080 * 100vh) calc(112 / 1920 * 100vw);
+    overflow: hidden;
+
+    .scriptTitle {
+      height: calc(70 / 1080 * 100vh);
+      width: 100%;
+      display: flex;
+      justify-content: center;
+
+
+      .titleDec1,
+      .titleDec2 {
+        height: calc(20 / 1080 * 100vh);
+        width: calc(44 / 1920 * 100vw);
+        margin-top: calc(3 / 1080 * 100vh);
+
+        img {
+          height: 100%;
+          width: 100%;
+          object-fit: contain;
+        }
+      }
+
+      .titleDec1 {
+        transform: scaleX(-1);
+      }
+
+      h3 {
+        font-size: calc(22 / 1080 * 100vh);
+        color: #65625f;
+        font-weight: 600;
+        padding: 0 calc(36 / 1920 * 100vw);
+      }
+    }
+
+    .textArea {
+      max-height: 100%;
+      overflow-y: auto;
+
+      &::-webkit-scrollbar {
+        width: 0;
+      }
+
+    }
+  }
+
+  .export {
+    position: absolute;
+    right: calc(80 / 1920 * 100vw);
+    top: calc(40 / 1080 * 100vh);
+    cursor: pointer;
+    height: calc(40 / 1080 * 100vh);
+    width: calc(40 / 1920 * 100vw);
+    border-radius: calc(2 / 1080 * 100vh);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: all 0.3s ease;
+
+    &::after {
+      font-family: 'iconfont';
+      content: '\e62d';
+      font-size: calc(22 / 1080 * 100vh);
+      color: #776353;
+
+    }
+
+    &:hover {
+      background-color: #f3f0ec;
+    }
+
+    &:hover::after {
+      color: #4e443c;
+    }
+
+  }
+}
