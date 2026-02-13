@@ -1,6 +1,6 @@
       .sceneModel {
 
-        border-bottom: solid calc(1 / 1080 * 100vh) #f5f3f1;
+        border-bottom: solid calc(1 / 1080 * 100vh) #f1efed;
         padding: calc(46 / 1080 * 100vh) 0;
 
         .subTitle {
@@ -20,18 +20,62 @@
 
           .scriptText {
             width: calc(722 / 1920 * 100vw);
+            display: flex;
+            flex-direction: column;
 
-            p {
-              font-size: calc(17 / 1080 * 100vh);
-              color: #222222;
-              text-align: justify;
-              line-height: 1.8;
+            .textArea {
+
+
+              p {
+                font-size: calc(17 / 1080 * 100vh);
+                color: #222222;
+                text-align: justify;
+                line-height: 2;
+              }
+            }
+
+            .editButton {
+              box-sizing: border-box;
+              height: calc(43 / 1080 * 100vh);
+              width: calc(110 / 1920 * 100vw);
+              margin-top: calc(24 / 1080 * 100vh);
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              background-color: #f8f7f5;
+              border: solid calc(1.5 / 1920 * 100vw) #cfc6c0;
+              border-radius: calc(2 / 1080 * 100vh);
+              transition: all 0.3s ease;
+              cursor: pointer;
+
+              &:hover {
+                background-color: #efece6;
+                border-color: #b8a9a0;
+
+                h5 {
+                  color: #5e4739;
+                }
+              }
+
+              h5 {
+                font-size: calc(17 / 1080 * 100vh);
+                color: #776353;
+                font-weight: 600;
+
+                &::before {
+                  font-family: 'iconfont';
+                  content: '\e76d';
+                  display: inline-block;
+                  margin-right: calc(8 / 1920 * 100vw);
+                  font-size: calc(18 / 1080 * 100vh);
+                }
+              }
             }
           }
 
           .scriptImg {
-            width: calc(252 / 1920 * 100vw);
-            height: calc(252 / 1080 * 100vh);
+            width: calc(280 / 1920 * 100vw);
+            height: calc(280/ 1080 * 100vh);
             border-radius: calc(2 / 1080 * 100vh);
             overflow: hidden;
 

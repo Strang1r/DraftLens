@@ -2,7 +2,21 @@ import './Final1.scss'
 import logoSvg from '../src/assets/logo.svg'
 import titleDecPng from '../assets/titleDec.png'
 import SceneModel from '../components/SceneModel'
-import { useLocation } from "react-router-dom";
+import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+
+
+type DraftScene = {
+  id: number | string;
+  subTitle: string;
+  img: string;
+  text: string[]; // Prompt 里是 text[]
+};
+
+type Draft = {
+  mainTitle: string;
+  scenes: DraftScene[];
+};
 
 type FinalScene = {
   id: string;
@@ -19,11 +33,26 @@ type FinalScript = {
 const Final1 = () => {
 
   const location = useLocation();
+  const [finalScript, setFinalScript] = useState<FinalScript>({ title: "", scenes: [] });
 
-  const finalScript: FinalScript = {
-    title: location.state?.title || 'HISTORY OF THE INTERNET',
-    scenes: location.state?.scenes || []
-  };
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("draft");
+      const d: Draft | null = raw ? JSON.parse(raw) : null;
+
+      setFinalScript({
+        title: d?.mainTitle || "HISTORY OF THE INTERNET",
+        scenes: (d?.scenes || []).map((s: any) => ({
+          id: String(s.id),
+          subTitle: s.subTitle,
+          scriptText: s.text,
+          scriptImg: s.img,
+        })),
+      });
+    } catch {
+      setFinalScript({ title: "HISTORY OF THE INTERNET", scenes: [] });
+    }
+  }, [location.key]);
 
   return (
     <div className="final1BackGround">

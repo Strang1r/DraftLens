@@ -11,7 +11,11 @@ console.log("KEY suffix:", process.env.OPENAI_API_KEY?.slice(-6));
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: ["http://localhost:5175"], // 你的 Vite 端口
+  credentials: true,
+}));
+
 app.use(express.json());
 
 app.get("/health", (_req, res) => res.json({ ok: true }));

@@ -24,14 +24,14 @@ export const DraftSchema = z.object({
   scenes: z
     .array(
       z.object({
-        id: z.number().int(),
-        subTitle: z.string().min(1),
-        img: z.enum(["/assets/1.png", "/assets/2.png", "/assets/3.png", "/assets/4.png", "/assets/5.png"]),
+        id: z.number().int().min(1).max(5),
+        subTitle: z.string().min(1).max(60),
+        img: z.string().regex(/^\/assets\/[1-5]\.png$/),
         text: z.array(z.string().min(1)).min(1),
       })
     )
-    .min(4)
-    .max(6),
+    .min(3)
+    .max(5),
 });
 
 export type Draft = z.infer<typeof DraftSchema>;
@@ -51,12 +51,8 @@ export function withTimeout<T>(p: Promise<T>, ms: number, label = "timeout"): Pr
 
 export async function generateDraftFromLLM(args: {
   instruction: string;
-  variant: "A" | "B";
 }): Promise<Draft> {
-  const { instruction, variant } = args;
-
-  console.log("🔍 generateDraftFromLLM called with:", { instruction, variant });
-  console.log("🔑 OPENAI_API_KEY exists:", !!process.env.OPENAI_API_KEY);
+  const { instruction } = args;
 
   const system = `
 You generate a short video script as STRICT JSON only.
@@ -68,13 +64,11 @@ Constraints:
 - scenes: 3 to 5 items.
 - Each scene must have:
  - id: number (1..5)
- - subTitle: string, <= 10 words. 
+ - subTitle: string, <= 10 words.
    Must follow this exact format: "SceneX: subtitle"
-   Where X is the scene id number (1..5).
-   Do not include extra punctuation, prefixes, or variations.
  - text: array of 1-3 paragraphs (strings), each scene total 80-120 words.
  - img: string, MUST be exactly "/assets/{id}.png" where {id} equals the scene id.
-- Style: popular science + storytelling, clear and accessible, no academic tone.
+- Style: popular science + storytelling, clear and accessible.
 - Avoid: first-person ("I/we"), rhetorical questions, lists/bullets, and value judgments.
 
 Output MUST be valid JSON parsable by JSON.parse.
@@ -82,12 +76,6 @@ Output MUST be valid JSON parsable by JSON.parse.
 
   const user = `
 Instruction: ${instruction || "(empty)"}
-Variant: ${variant}
-
-Variant requirements:
-- If Variant is A: use a neutral, explanatory framing (how/why it works).
-- If Variant is B: use a more narrative, story-like framing (people/events), BUT keep facts and coverage similar.
-- Keep overall length and information density roughly similar between A and B.
 
 Image guidance (for img selection only):
 - Each scene img references a square, brown/sepia story hand-sketched illustration.

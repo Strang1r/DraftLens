@@ -1,8 +1,8 @@
-import ScriptEdit from "../components/ScriptEdit"
+import Edit from "../components/ScriptEdit"
 
 const Condition3 = () => {
   return (
-    <ScriptEdit
+    <Edit
       showSearch={true}
       showWhyHere={true}
     />

@@ -1,52 +1,99 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import logoSvg from '../src/assets/logo.svg'
+import { useNavigate, useParams } from 'react-router-dom';
 import './ScriptEdit.scss'
-import { useNavigate, useLocation } from 'react-router-dom';
 
 type Scene = {
-  id: number;
+  id: number | string;
   subTitle: string;
-  img: string;          // e.g. "/assets/2.png"
-  text: string[];       // paragraphs
+  img: string;
+  text: string[];
 };
 
-// condition3 传 showSearch
-type SearchProps = {
+type Draft = {
+  mainTitle: string;
+  scenes: Scene[];
+};
+
+type EditProps = {
   showSearch?: boolean;
-};
-
-type WhyHereProps = {
   showWhyHere?: boolean;
 };
 
 
-const ScriptEdit = ({ showSearch, showWhyHere }: SearchProps & WhyHereProps) => {
+const Edit = (props: EditProps) => {
+  const navigate = useNavigate();
+  const { sceneId } = useParams();
 
-  // 获取传递的数据
-  const location = useLocation();
-  const stored = sessionStorage.getItem("selectedScript");
-  const storedData = stored ? JSON.parse(stored) : null;
-  const data = location.state ?? storedData;
-  const scenes: Scene[] = data?.scenes ?? [];
-  const initialTitle = data?.mainTitle ?? "HISTORY";
+  // ✅ 统一从 draft 读
+  const draft: Draft | null = useMemo(() => {
+    const raw = sessionStorage.getItem("draft");
+    return raw ? JSON.parse(raw) : null;
+  }, []);
 
-  // ✅ 用 A/B 当草稿key（每个版本一份）
-  const draftId = data?.id ?? "UNKNOWN";
-  const draftKey = `draft_script_edit_${draftId}`;
+  const scenes: Scene[] = draft?.scenes ?? [];
+  const initialTitle = draft?.mainTitle ?? "HISTORY";
 
-  // 确认弹框
-  const [showConfirm, setShowConfirm] = useState(false);
+  // ✅ 初始定位到点击的那个 scene
+  const initialIndex = useMemo(() => {
+    const idx = scenes.findIndex(s => String(s.id) === String(sceneId));
+    return idx >= 0 ? idx : 0;
+  }, [scenes, sceneId]);
 
-  // scene index
-  const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
+  // scene index（可前后切换）
+  const [currentSceneIndex, setCurrentSceneIndex] = useState<number>(initialIndex);
+
+  // 当用户从 Final 点了另一个 scene 进来，sceneId 变了时，重新定位
+  useEffect(() => {
+    setCurrentSceneIndex(initialIndex);
+  }, [initialIndex]);
 
   const currentScene = scenes[currentSceneIndex];
   const isFirst = currentSceneIndex === 0;
   const isLast = currentSceneIndex === scenes.length - 1;
 
+  // 确认弹框
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  // 编辑状态：依旧是“全局数组”，支持切 scene
+  const [editedMainTitle, setEditedMainTitle] = useState<string>(initialTitle);
+  const [editedSubTitle, setEditedSubTitle] = useState<string[]>(
+    () => scenes.map(s => s.subTitle)
+  );
+  const [editedText, setEditedText] = useState<string[][]>(
+    () => scenes.map(s => [...s.text])
+  );
+
+  // 如果 draft/scenes 为空，直接回 final（避免报错）
+  useEffect(() => {
+    if (!draft || scenes.length === 0) navigate("/final");
+  }, [draft, scenes.length, navigate]);
+
+  // ✅ 保存回 draft（唯一真相）
+  const saveDraftToStorage = (nextMain: string, nextSub: string[], nextText: string[][]) => {
+    const raw = sessionStorage.getItem("draft");
+    if (!raw) return;
+
+    const d: Draft = JSON.parse(raw);
+    d.mainTitle = nextMain;
+
+    d.scenes = d.scenes.map((s, i) => ({
+      ...s,
+      subTitle: nextSub[i] ?? s.subTitle,
+      text: nextText[i] ?? s.text,
+      // img 你目前没编辑，就保持原样
+    }));
+
+    sessionStorage.setItem("draft", JSON.stringify(d));
+  };
+
+
+  // prev / next
   const goPrev = () => {
     if (isFirst) return;
-    setCurrentSceneIndex((v) => Math.max(0, v - 1));
+    // 可选：切换前先存一次（避免用户没 blur 就切走）
+    saveDraftToStorage(editedMainTitle, editedSubTitle, editedText);
+    setCurrentSceneIndex(v => Math.max(0, v - 1));
   };
 
   const goNext = () => {
@@ -54,58 +101,38 @@ const ScriptEdit = ({ showSearch, showWhyHere }: SearchProps & WhyHereProps) => 
       setShowConfirm(true);
       return;
     }
-    setCurrentSceneIndex((v) => Math.min(scenes.length - 1, v + 1));
+    saveDraftToStorage(editedMainTitle, editedSubTitle, editedText);
+    setCurrentSceneIndex(v => Math.min(scenes.length - 1, v + 1));
   };
 
-  // 可编辑
-  // subtitle
+  // subtitle blur
   const onEditSubTitle = (value: string) => {
-    setEditedSubTitle((prev) => {
+    setEditedSubTitle(prev => {
       const copy = [...prev];
       copy[currentSceneIndex] = value;
-      saveDraft(editedMainTitle, copy, editedText);
+      saveDraftToStorage(editedMainTitle, copy, editedText);
       return copy;
     });
   };
 
-  // mainTitle
+  // mainTitle blur
   const onEditMainTitle = (value: string) => {
     setEditedMainTitle(value);
-    saveDraft(value, editedSubTitle, editedText);
+    saveDraftToStorage(value, editedSubTitle, editedText);
   };
 
-  const navigate = useNavigate();
-
-  // 刷新后不丢失
-  const DEFAULT_DRAFT = {
-    mainTitle: initialTitle,
-    scenes: scenes.map((s) => ({
-      subTitle: s.subTitle,
-      scriptImg: s.img,
-      scriptText: [...s.text],
-    })),
-  };
-
-  const [editedMainTitle, setEditedMainTitle] = useState<string>(() => DEFAULT_DRAFT.mainTitle);
-  const [editedSubTitle, setEditedSubTitle] = useState<string[]>(() => DEFAULT_DRAFT.scenes.map((x: any) => x.subTitle));
-  const [editedText, setEditedText] = useState<string[][]>(() => DEFAULT_DRAFT.scenes.map((x: any) => x.scriptText));
-
-  const saveDraft = (nextMain: string, nextSub: string[], nextText: string[][]) => {
-    const draft = {
-      mainTitle: nextMain,
-      scenes: scenes.map((s, i) => ({
-        subTitle: nextSub[i],
-        scriptImg: s.img,
-        scriptText: nextText[i],
-      })),
-    };
-    sessionStorage.setItem(draftKey, JSON.stringify(draft));
-  };
-
-  // 大标题
+  // contentEditable text：保持你原来的方案
   const mainTitleRef = useRef<HTMLHeadingElement | null>(null);
+  const scriptRef = useRef<HTMLDivElement | null>(null);
 
-  // 渐入动画
+  useEffect(() => {
+    const el = scriptRef.current;
+    if (!el) return;
+    const text = (editedText[currentSceneIndex] || []).join("\n");
+    if (el.innerText !== text) el.innerText = text;
+  }, [currentSceneIndex, editedText]);
+
+  // 弹框动画（保持你原逻辑）
   const [modalOpenClass, setModalOpenClass] = useState(false);
   useEffect(() => {
     if (showConfirm) {
@@ -116,23 +143,11 @@ const ScriptEdit = ({ showSearch, showWhyHere }: SearchProps & WhyHereProps) => 
     }
   }, [showConfirm]);
 
-  // 点击confirm后
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const scriptRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const el = scriptRef.current;
-    if (!el) return;
+  if (!currentScene) return null;
 
-    const text = (editedText[currentSceneIndex] || []).join("\n");
-
-    // 避免每次 state 更新都覆盖导致光标跳
-    if (el.innerText !== text) {
-      el.innerText = text;
-    }
-  }, [currentSceneIndex, editedText]);
-
-  // Why here
+  // why here
   const [showWhyHereState, setShowWhyHereState] = useState(false);
 
 
@@ -175,7 +190,8 @@ const ScriptEdit = ({ showSearch, showWhyHere }: SearchProps & WhyHereProps) => 
               {editedSubTitle[currentSceneIndex]}
             </h4>
           </div>
-          {showSearch && (
+          {/* condition3 searchBar */}
+          {props.showSearch && (
             <div className="searchBar">
               <input
                 type="text"
@@ -203,18 +219,13 @@ const ScriptEdit = ({ showSearch, showWhyHere }: SearchProps & WhyHereProps) => 
               ref={scriptRef}
               onBlur={(e) => {
                 const raw = (e.currentTarget.innerText || "").replace(/\r/g, "");
-                // ✅ 保留空行：split 后不要 filter(Boolean)
                 let lines = raw.split("\n");
-
-                // （可选）只去掉“最后多出来的空行”，避免末尾无限空行
-                while (lines.length > 1 && lines[lines.length - 1] === "") {
-                  lines.pop();
-                }
+                while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
 
                 setEditedText(prev => {
                   const copy = prev.map(arr => [...arr]);
-                  copy[currentSceneIndex] = lines; // ✅ lines 里可以包含 ""
-                  saveDraft(editedMainTitle, editedSubTitle, copy);
+                  copy[currentSceneIndex] = lines;
+                  saveDraftToStorage(editedMainTitle, editedSubTitle, copy);
                   return copy;
                 });
               }}
@@ -226,14 +237,24 @@ const ScriptEdit = ({ showSearch, showWhyHere }: SearchProps & WhyHereProps) => 
           <div className='btnArea'>
             <div
               className={`preBtn ${isFirst ? "invalideBtn" : ""}`}
-              onClick={() => { goPrev(); setShowWhyHereState(false); }}
+              onClick={() => {
+                goPrev();
+                setShowWhyHereState(false);
+              }}
             >
             </div>
             <div
               className='nextBtn'
-              onClick={() => { goNext(); setShowWhyHereState(false); }}
+              onClick={() => {
+                goNext();
+                setShowWhyHereState(false);
+              }}
             >
             </div>
+          </div>
+          {/* storyBoard */}
+          <div className='storyBoard' onClick={() => navigate("/final")}>
+            <h5>Storyboard</h5>
           </div>
         </div>
         <div className="divider" />
@@ -267,20 +288,16 @@ const ScriptEdit = ({ showSearch, showWhyHere }: SearchProps & WhyHereProps) => 
                   if (isGenerating) return; // 防止重复点击
                   setIsGenerating(true);
 
-                  const finalScript = {
-                    title: mainTitleRef.current?.textContent ?? editedMainTitle,
-                    scenes: scenes.map((s, index) => ({
-                      id: String(s.id),
-                      subTitle: editedSubTitle[index],
-                      scriptImg: s.img,
-                      scriptText: editedText[index],
-                    })),
-                  };
+                  // 最终保存一次
+                  saveDraftToStorage(
+                    mainTitleRef.current?.textContent ?? editedMainTitle,
+                    editedSubTitle,
+                    editedText
+                  );
 
-                  sessionStorage.setItem("finalScript", JSON.stringify(finalScript));
-
+                  // 回 final（Final 从 draft 读）
                   setTimeout(() => {
-                    navigate('/final', { state: finalScript });
+                    navigate('/final');
                     setShowConfirm(false);
                     setIsGenerating(false);
                   }, 3000);
@@ -294,7 +311,7 @@ const ScriptEdit = ({ showSearch, showWhyHere }: SearchProps & WhyHereProps) => 
         </div>
       )}
       {/* Why here */}
-      {showWhyHere && showWhyHereState && (
+      {props.showWhyHere && showWhyHereState && (
         <div className="whyHere">
           <p>Why here?</p>
         </div>
@@ -304,4 +321,4 @@ const ScriptEdit = ({ showSearch, showWhyHere }: SearchProps & WhyHereProps) => 
   )
 }
 
-export default ScriptEdit
+export default Edit
