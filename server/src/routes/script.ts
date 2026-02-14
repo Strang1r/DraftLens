@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { generateDraftFromLLM, generateSceneImageBase64 } from "../ai/llm";
+import { generateDraftFromLLM, generateSceneImageBase64, generateSceneAlternativesFromLLM } from "../ai/llm";
 import { withTimeout } from "../ai/llm";
 
 console.log("🔥 USING SCRIPT ROUTE FILE:", __filename);
@@ -83,6 +83,64 @@ router.post("/generate", async (req, res) => {
   } catch (e: any) {
     console.error("LLM failed:", e?.message || e);
     return res.json({ draft: makeDraftFallback(), error: "llm_failed" });
+  }
+});
+
+router.post("/alternatives", async (req, res) => {
+  const { mainTitle, subTitle, text, generateImages } = req.body ?? {};
+  const safeMainTitle = String(mainTitle ?? "").trim();
+  const safeSubTitle = String(subTitle ?? "").trim();
+  const safeText: string[] = Array.isArray(text) ? text.map(String) : [];
+  const wantImages = Boolean(generateImages);
+
+  if (!safeMainTitle || !safeSubTitle || safeText.length === 0) {
+    return res.status(400).json({ error: "missing_fields" });
+  }
+
+  try {
+    // 1) 先让 LLM 生成两套文本（只要 text）
+    const altTexts = await generateSceneAlternativesFromLLM({
+      mainTitle: safeMainTitle,
+      subTitle: safeSubTitle,
+      text: safeText,
+    });
+
+    // 2) 再分别生成两张图（基于同一个 subTitle，但 text 不同）
+    let conversationalImg = "/assets/4.png";
+    let professionalImg = "/assets/5.png";
+
+    if (wantImages) {
+      conversationalImg = await withTimeout(
+        generateSceneImageBase64({
+          mainTitle: safeMainTitle,
+          subTitle: safeSubTitle,
+          text: altTexts.conversational.text,
+        }),
+        60000,
+        "image_timeout_conversational"
+      );
+
+      professionalImg = await withTimeout(
+        generateSceneImageBase64({
+          mainTitle: safeMainTitle,
+          subTitle: safeSubTitle,
+          text: altTexts.professional.text,
+        }),
+        60000,
+        "image_timeout_professional"
+      );
+    }
+
+    // 3) 返回给前端：只给 text + img，不给 subtitle（subtitle 前端继续用当前 scene 的）
+    return res.json({
+      alternatives: [
+        { id: "A", tone: "conversational", text: altTexts.conversational.text, img: conversationalImg },
+        { id: "B", tone: "professional", text: altTexts.professional.text, img: professionalImg },
+      ],
+    });
+  } catch (e: any) {
+    console.error("alternatives failed:", e?.message || e);
+    return res.status(500).json({ error: "alternatives_failed" });
   }
 });
 

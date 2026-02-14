@@ -2,7 +2,9 @@ import Edit from "../components/ScriptEdit";
 
 const Condition1 = () => {
   return (
-    <Edit />
+    <Edit
+      showAlternative={true}
+    />
   );
 }
 

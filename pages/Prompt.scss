@@ -145,17 +145,6 @@
       gap: calc(14 / 1920 * 100vw);
       margin-top: calc(60 / 1080 * 100vh);
 
-      .spinner {
-        width: calc(24 / 1920 * 100vw);
-        aspect-ratio: 1 / 1;
-        height: auto;
-        border: calc(3.5 / 1080 * 100vh) solid #d8d2cc;
-        border-top: calc(3.5 / 1080 * 100vh) solid #8b7d6b;
-        border-radius: 50%;
-        box-sizing: border-box;
-        animation: spin 0.9s linear infinite;
-      }
-
       p {
         color: #444;
         font-size: calc(18 / 1080 * 100vh);
@@ -164,14 +153,4 @@
   }
 
 
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
 }

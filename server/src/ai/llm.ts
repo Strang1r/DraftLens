@@ -139,3 +139,65 @@ Depict the core idea of this scene visually.
 
   return `data:image/png;base64,${b64}`;
 }
+
+const SceneAlternativesSchema = z.object({
+  conversational: z.object({
+    text: z.array(z.string().min(1)).min(1).max(3),
+  }),
+  professional: z.object({
+    text: z.array(z.string().min(1)).min(1).max(3),
+  }),
+});
+
+export type SceneAlternatives = z.infer<typeof SceneAlternativesSchema>;
+
+export async function generateSceneAlternativesFromLLM(args: {
+  mainTitle: string;
+  subTitle: string;   // 用当前 scene subtitle 当上下文
+  text: string[];     // 当前 scene 原文
+}): Promise<SceneAlternatives> {
+  const system = `
+You rewrite ONE scene into TWO alternative versions as STRICT JSON only.
+Return JSON with EXACT keys: conversational, professional.
+Each must contain key: text (array of 1-3 paragraphs). No other keys. No markdown.
+
+Constraints:
+- Language: English only.
+- Keep the same factual meaning; do not introduce new facts.
+- conversational: friendly, simple, approachable, but still accurate.
+- professional: formal, concise, neutral tone.
+- Avoid lists/bullets.
+- Total per version: about 80-120 words (across its paragraphs).
+Output MUST be valid JSON parsable by JSON.parse.
+`.trim();
+
+  const user = `
+Main title: ${args.mainTitle}
+Scene subtitle (keep unchanged): ${args.subTitle}
+
+Original scene text:
+${args.text.join("\n\n")}
+`.trim();
+
+  const req = client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.4,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  });
+
+  const resp = await withTimeout(req, 20000, "alt_text_timeout");
+  const content = resp.choices?.[0]?.message?.content ?? "{}";
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error("LLM returned non-JSON for alternatives");
+  }
+
+  return SceneAlternativesSchema.parse(parsed);
+}

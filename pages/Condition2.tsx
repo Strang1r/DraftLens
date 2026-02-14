@@ -2,7 +2,9 @@ import Edit from "../components/ScriptEdit"
 
 const Condition2 = () => {
   return (
-    <Edit />
+    <Edit
+      showAnnotation={true}
+    />
   )
 }
 

@@ -2,7 +2,7 @@ import './Final1.scss'
 import logoSvg from '../src/assets/logo.svg'
 import titleDecPng from '../assets/titleDec.png'
 import SceneModel from '../components/SceneModel'
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 
 
@@ -34,6 +34,7 @@ const Final1 = () => {
 
   const location = useLocation();
   const [finalScript, setFinalScript] = useState<FinalScript>({ title: "", scenes: [] });
+  const textAreaRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     try {
@@ -54,6 +55,27 @@ const Final1 = () => {
     }
   }, [location.key]);
 
+  useEffect(() => {
+    const scrollToId = (location.state as any)?.scrollToId;
+    if (!scrollToId) return;
+
+    const container = textAreaRef.current;
+    if (!container) return;
+
+    requestAnimationFrame(() => {
+      const el = document.getElementById(String(scrollToId));
+      if (!el) return;
+
+      // 计算元素相对容器的位置
+      const OFFSET = 90; // 给标题留空间（你可调 60~120）
+      const elTop = el.offsetTop; // 相对 offsetParent（这里通常就是 textArea 内）
+      container.scrollTo({
+        top: Math.max(0, elTop - OFFSET),
+        behavior: "auto", // 无动画
+      });
+    });
+  }, [location.key, finalScript.scenes]);
+
   return (
     <div className="final1BackGround">
       <div className='logo'>
@@ -69,7 +91,7 @@ const Final1 = () => {
             <img src={titleDecPng} alt="" />
           </div>
         </div>
-        <div className='textArea'>
+        <div className='textArea' ref={textAreaRef}>
           {finalScript.scenes.map((item) => (
             <SceneModel
               key={item.id}

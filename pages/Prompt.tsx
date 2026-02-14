@@ -2,6 +2,7 @@ import './Prompt.scss'
 import logoSvg from '../src/assets/logo.svg'
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import Spinner from '../components/Spinner';
 
 const Prompt = () => {
   const [input, setInput] = useState('');
@@ -172,7 +173,7 @@ const Prompt = () => {
         )}
         {showAIResponse && (
           <div className='AIResponse'>
-            <div className="spinner" />
+            <Spinner />
             <p>Preparing your draft…</p>
           </div>
         )}
