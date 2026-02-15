@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { generateDraftFromLLM, generateSceneImageBase64, generateSceneAlternativesFromLLM } from "../ai/llm";
+import { generateDraftFromLLM, generateSceneImageBase64, generateSceneAlternativesFromLLM, generateWhyHereFromLLM, generateSceneRationaleFromLLM } from "../ai/llm";
 import { withTimeout } from "../ai/llm";
+import { generateAnnotationsFromLLM } from "../ai/llm";
 
 console.log("🔥 USING SCRIPT ROUTE FILE:", __filename);
 
@@ -74,12 +75,47 @@ router.post("/generate", async (req, res) => {
       instruction: safeInstruction,
     } as any);
 
+    const scenesEnhanced = await Promise.all(
+      draftRaw.scenes.map(async (scene: any) => {
+        // 1) annotations（关键词/关键句）
+        let annotations: any = {
+          paragraphs: scene.text.map(() => ({ keyWords: [], keySentences: [] })),
+        };
+        try {
+          annotations = await withTimeout(
+            generateAnnotationsFromLLM({ text: scene.text }),
+            15000,
+            "annotation_timeout"
+          );
+        } catch (e: any) {
+          console.warn("Annotation failed for scene:", scene.id, e?.message || e);
+        }
+
+        // 2) rationale
+        let rationale = "";
+        try {
+          const out = await withTimeout(
+            generateSceneRationaleFromLLM({
+              mainTitle: draftRaw.mainTitle,
+              subTitle: scene.subTitle,
+              text: scene.text,
+            }),
+            15000,
+            "rationale_timeout"
+          );
+          rationale = out.rationale || "";
+        } catch (e: any) {
+          console.warn("Rationale failed for scene:", scene.id, e?.message || e);
+        }
+
+        return { ...scene, annotations, rationale };
+      })
+    );
     // 需要图片就打开
     // const draft = await attachImages(draftRaw);
-    const draft = draftRaw;
-
+    // 3) 合并回 draft
+    const draft = { ...draftRaw, scenes: scenesEnhanced };
     return res.json({ draft });
-
   } catch (e: any) {
     console.error("LLM failed:", e?.message || e);
     return res.json({ draft: makeDraftFallback(), error: "llm_failed" });
@@ -141,6 +177,34 @@ router.post("/alternatives", async (req, res) => {
   } catch (e: any) {
     console.error("alternatives failed:", e?.message || e);
     return res.status(500).json({ error: "alternatives_failed" });
+  }
+});
+
+router.post("/why-here", async (req, res) => {
+  const { searchTerm, sceneText } = req.body ?? {};
+  const safeTerm = String(searchTerm ?? "").trim();
+  const safeText: string[] = Array.isArray(sceneText) ? sceneText.map(String) : [];
+
+  // 空搜索：直接返回空解释（前端就显示默认文案）
+  if (!safeTerm) {
+    return res.json({ explanation: "" });
+  }
+
+  // sceneText 最好传数组（你 scene.text 本来就是 string[]）
+  if (safeText.length === 0) {
+    return res.status(400).json({ error: "missing_sceneText", explanation: "" });
+  }
+
+  try {
+    const out = await withTimeout(
+      generateWhyHereFromLLM({ searchTerm: safeTerm, sceneText: safeText }),
+      15000,
+      "why_here_timeout"
+    );
+    return res.json(out); // { explanation }
+  } catch (e: any) {
+    console.error("why-here failed:", e?.message || e);
+    return res.json({ explanation: "", error: "why_here_failed" });
   }
 });
 

@@ -1,25 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import logoSvg from '../src/assets/logo.svg'
 import { useNavigate, useParams } from 'react-router-dom';
 import './ScriptEdit.scss'
 import AlternativePop from './AlternativePop';
 import Spinner from './Spinner';
-import LexicalEditor from "./LexicalEditor";
-
-type ParagraphAnnotation = {
-  keyWords: string[];       // 1-2
-  keySentences: string[];   // 0-1
-};
 
 type Scene = {
   id: number | string;
   subTitle: string;
   img: string;
   text: string[];
-  annotations?: {
-    paragraphs: ParagraphAnnotation[]; // 与 text.length 对齐
-  };
-  rationale?: string; // condition4 专用
 };
 
 type Draft = {
@@ -32,7 +22,6 @@ type EditProps = {
   showWhyHere?: boolean;
   showAlternative?: boolean;
   showAnnotation?: boolean; // condition2 专用
-  showSummary?: boolean; // condition4 专用
 };
 
 type AltScene = {
@@ -43,11 +32,24 @@ type AltScene = {
   tone?: "conversational" | "professional";
 };
 
-const Edit = (props: EditProps) => {
+// condition2 标注
+type TextRange = { start: number; end: number };
+type SentencePick = { p: number; s: number };
+
+type Annotation = {
+  sceneId: string;
+  keyWords: string[];
+  keySentencePicks: SentencePick[];
+  keySentenceRanges: TextRange[];
+  baseText: string; // ✅ ranges 对应的文本基准（normalized）
+};
+
+
+const Edit1 = (props: EditProps) => {
   const navigate = useNavigate();
   const { sceneId } = useParams();
 
-  // 统一从 draft 读
+  // ✅ 统一从 draft 读
   const draft: Draft | null = useMemo(() => {
     const raw = sessionStorage.getItem("draft");
     return raw ? JSON.parse(raw) : null;
@@ -94,8 +96,7 @@ const Edit = (props: EditProps) => {
     if (!draft || scenes.length === 0) navigate("/final");
   }, [draft, scenes.length, navigate]);
 
-
-  // 保存回 draft（唯一真相）
+  // ✅ 保存回 draft（唯一真相）
   const saveDraftToStorage = (nextMain: string, nextSub: string[], nextText: string[][], nextImg: string[]) => {
     const raw = sessionStorage.getItem("draft");
     if (!raw) return;
@@ -112,6 +113,7 @@ const Edit = (props: EditProps) => {
 
     sessionStorage.setItem("draft", JSON.stringify(d));
   };
+
 
   // prev / next
   const goPrev = () => {
@@ -146,19 +148,39 @@ const Edit = (props: EditProps) => {
     saveDraftToStorage(value, editedSubTitle, editedText, editedImg);
   };
 
-  // contentEditable text
+  // contentEditable text：保持你原来的方案
   const mainTitleRef = useRef<HTMLHeadingElement | null>(null);
   const scriptRef = useRef<HTMLDivElement | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    if (props.showAnnotation) return; // condition2 走 Lexical，就别碰 DOM
+  /* useEffect(() => {
+    const el = scriptRef.current;
+    if (!el) return;
+    const text = (editedText[currentSceneIndex] || []).join("\n");
+    if (el.innerText !== text) el.innerText = text;
+  }, [currentSceneIndex, editedText]); */
+
+  useLayoutEffect(() => {
     const el = scriptRef.current;
     if (!el) return;
 
-    const text = (editedText[currentSceneIndex] || []).join("\n");
-    if (el.innerText !== text) el.innerText = text;
-  }, [props.showAnnotation, currentSceneIndex, editedText]);
+    // 当前 scene 的真实文本
+    const t = normalizeText(
+      (editedText[currentSceneIndex] ?? []).join("\n")
+    );
+
+    // 1️⃣ 先把 DOM 强制同步为唯一真相
+    if (normalizeText(el.textContent ?? "") !== t) {
+      el.textContent = t;
+    }
+
+    // 2️⃣ 同步 liveText + prev
+    setLiveText(t);
+    prevTextRef.current = t;
+
+    // 3️⃣ 清空旧 annotation（非常关键）
+    setAnnotation(null);
+
+  }, [currentSceneIndex]);
 
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -201,6 +223,7 @@ const Edit = (props: EditProps) => {
     saveDraftToStorage(editedMainTitle, nextSub, nextText, nextImg);
     setShowAlternativeState(false);
   };
+
 
   // 替换“当前scene”的文本 + 图片
   const handleReplaceAll = (alt: { text: string[]; img: string }) => {
@@ -327,44 +350,295 @@ const Edit = (props: EditProps) => {
     });
   };
 
-  // condition3 搜索高亮
-  const [searchTerm, setSearchTerm] = useState("");
-  const [showHighlight, setShowHighlight] = useState(false); // 是否展示高亮（=whyHere那层）
-  const [searchTriggered, setSearchTriggered] = useState(false); // ✅ 用户是否主动搜索
+  // condition2 标注数据
+  const [liveText, setLiveText] = useState("");
+  const [annotation, setAnnotation] = useState<Annotation | null>(null);
+  const prevTextRef = useRef("");
 
-  // condition3 请求后端接口
-  const [whyHereText, setWhyHereText] = useState("");
-  const [isWhyHereLoading, setIsWhyHereLoading] = useState(false);
+  const sceneIdStr = String(currentScene?.id ?? "");
 
-  async function fetchWhyHere(term: string, sceneText: string[]) {
+  // --- sessionStorage ---
+  const ANN_KEY = "draftlens_condition2_ann_v1";
 
-    const t = term.trim();
+  function loadAnnMap(): Record<string, Annotation> {
+    try {
+      return JSON.parse(sessionStorage.getItem(ANN_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  }
+  function loadAnn(sceneId: string): Annotation | null {
+    const map = loadAnnMap();
+    return map[sceneId] ?? null;
+  }
+  function saveAnn(sceneId: string, ann: Annotation) {
+    const map = loadAnnMap();
+    map[sceneId] = ann;
+    sessionStorage.setItem(ANN_KEY, JSON.stringify(map));
+  }
 
-    // 空输入：直接清空，不请求
-    if (!t) {
-      setWhyHereText("");
-      setIsWhyHereLoading(false);
+  // --- text normalize (must be single truth) ---
+  function normalizeText(s: string) {
+    return (s ?? "")
+      .replace(/\r/g, "")
+      .replace(/\u00A0/g, " ")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n");
+  }
+
+  // --- helpers: keywords ranges ---
+  function escapeRegExp(s: string) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  function findKeywordRanges(text: string, keywords: string[]): Array<[number, number]> {
+    const ranges: Array<[number, number]> = [];
+    const sorted = [...(keywords ?? [])].filter(Boolean).sort((a, b) => b.length - a.length);
+    for (const kw of sorted) {
+      const re = new RegExp(escapeRegExp(kw), "gi");
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text))) {
+        ranges.push([m.index, m.index + m[0].length]);
+      }
+    }
+    return ranges;
+  }
+
+  // --- helpers: offsets -> DOM Range ---
+  function getTextNodes(root: Node): Text[] {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes: Text[] = [];
+    let n: Node | null;
+    while ((n = walker.nextNode())) nodes.push(n as Text);
+    return nodes;
+  }
+  function resolveOffset(textNodes: Text[], globalOffset: number) {
+    let offset = globalOffset;
+    for (const tn of textNodes) {
+      const len = tn.nodeValue?.length ?? 0;
+      if (offset <= len) return { node: tn, offset };
+      offset -= len;
+    }
+    const last = textNodes[textNodes.length - 1];
+    return { node: last, offset: last?.nodeValue?.length ?? 0 };
+  }
+  function makeDomRange(rootEl: HTMLElement, start: number, end: number): Range | null {
+    const textNodes = getTextNodes(rootEl);
+    if (!textNodes.length) return null;
+
+    const s = resolveOffset(textNodes, start);
+    const e = resolveOffset(textNodes, end);
+
+    const r = document.createRange();
+    r.setStart(s.node, s.offset);
+    r.setEnd(e.node, e.offset);
+    return r;
+  }
+
+  // --- helpers: diff + remove touched sentences ---
+  function computeSimpleDiff(prev: string, next: string): {
+    pos: number;
+    removedLen: number;
+    insertedLen: number;
+    delta: number;
+  } | null {
+    if (prev === next) return null;
+
+    let start = 0;
+    const minLen = Math.min(prev.length, next.length);
+    while (start < minLen && prev[start] === next[start]) start++;
+
+    let endPrev = prev.length - 1;
+    let endNext = next.length - 1;
+    while (endPrev >= start && endNext >= start && prev[endPrev] === next[endNext]) {
+      endPrev--;
+      endNext--;
+    }
+
+    const removedLen = Math.max(0, endPrev - start + 1);
+    const insertedLen = Math.max(0, endNext - start + 1);
+    const delta = insertedLen - removedLen;
+
+    return { pos: start, removedLen, insertedLen, delta };
+  }
+
+  type TextRange = { start: number; end: number };
+
+  function updateSentenceRangesOnEdit(
+    ranges: TextRange[],
+    edit: { pos: number; removedLen: number; delta: number }
+  ): TextRange[] {
+    const { pos, removedLen, delta } = edit;
+    const editStart = pos;
+    const editEndPrev = pos + removedLen; // 这段在“旧文本”里的结束位置
+
+    return ranges
+      .filter(r => {
+        // 触碰/相交：删掉（下划线消失）
+        const touched = editStart <= r.end && editEndPrev >= r.start;
+        return !touched;
+      })
+      .map(r => {
+        // 编辑在 range 前面：range 整体平移
+        if (editEndPrev <= r.start) {
+          return { start: r.start + delta, end: r.end + delta };
+        }
+        // 编辑在 range 后面：不动
+        if (editStart >= r.end) return r;
+
+        // （理论上相交已经被 filter 掉了，这里只是兜底）
+        return r;
+      })
+      .map(r => {
+        // 兜底：防负数/倒置
+        const s = Math.max(0, r.start);
+        const e = Math.max(s, r.end);
+        return { start: s, end: e };
+      });
+  }
+
+  // --- key: compute sentence ranges from picks ---
+  function computeSentenceRangesFromPicks(text: string, picks: SentencePick[]): TextRange[] {
+    if (!text) return [];
+
+    const src = normalizeText(text);
+
+    // protect abbreviations (length preserved by replacing "." with "·")
+    const protectedText = src
+      .replace(/\b([A-Za-z])\.([A-Za-z])\./g, "$1·$2·")
+      .replace(/\be\.g\./gi, "e·g·")
+      .replace(/\bi\.e\./gi, "i·e·")
+      .replace(/\bMr\./g, "Mr·")
+      .replace(/\bMrs\./g, "Mrs·")
+      .replace(/\bDr\./g, "Dr·")
+      .replace(/\bProf\./g, "Prof·")
+      .replace(/\bInc\./g, "Inc·");
+
+    // paragraphs: real starts in full text
+    const paras: string[] = [];
+    const paraStarts: number[] = [];
+    for (const m of protectedText.matchAll(/[^\n]+/g)) {
+      const seg = m[0];
+      if (!seg.trim()) continue;
+      paras.push(seg);
+      paraStarts.push(m.index ?? 0);
+    }
+
+    const sentenceRegex = /[^.!?]+[.!?]?(\s+|$)/g;
+
+    const ranges: TextRange[] = [];
+    for (const pick of picks) {
+      const pText = paras[pick.p];
+      const base = paraStarts[pick.p];
+      if (!pText || base == null) continue;
+
+      const matches = [...pText.matchAll(sentenceRegex)];
+      const mm = matches[pick.s];
+      if (!mm) continue;
+
+      const s0 = mm.index ?? 0;
+      let e0 = s0 + mm[0].length;
+      while (e0 > s0 && /\s/.test(pText[e0 - 1])) e0--;
+
+      ranges.push({ start: base + s0, end: base + e0 });
+    }
+
+    return ranges;
+  }
+
+  // --- ① scene change: sync DOM + liveText + prev (layout effect) ---
+  useLayoutEffect(() => {
+    if (!props.showAnnotation) return;
+    const el = scriptRef.current;
+    if (!el) return;
+
+    const t = normalizeText((editedText[currentSceneIndex] ?? []).join("\n"));
+
+    // sync DOM text
+    if (normalizeText(el.textContent ?? "") !== t) {
+      el.textContent = t;
+    }
+
+    setLiveText(t);
+    prevTextRef.current = t;
+
+    // ✅ IMPORTANT: do NOT blindly setAnnotation(null) here.
+    // We let the init effect below decide saved vs new.
+  }, [props.showAnnotation, currentSceneIndex, editedText]);
+
+  // --- ② init annotation on enter / scene change ---
+  useEffect(() => {
+    if (!props.showAnnotation) return;
+    if (!sceneIdStr) return;
+
+    const t = normalizeText((editedText[currentSceneIndex] ?? []).join("\n"));
+    if (!t) return;
+
+    const saved = loadAnn(sceneIdStr);
+    if (saved && normalizeText(saved.baseText) === t) {
+      setAnnotation(saved);
       return;
     }
 
-    setIsWhyHereLoading(true);
+    // TODO: you can customize by sceneIdStr if needed
+    const keyWords = ["ARPANET", "global communication"];
+    const keySentencePicks: SentencePick[] = [
+      { p: 0, s: 0 }, // 第一段第1句
+      { p: 1, s: 0 }, // 第二段第1句（想第二句就 s:1）
+    ];
 
-    try {
-      const resp = await fetch("http://localhost:3001/api/script/why-here", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ searchTerm: t, sceneText }),
-      });
+    const ranges = computeSentenceRangesFromPicks(t, keySentencePicks);
 
-      const data = await resp.json();
-      setWhyHereText(data.explanation || "");
-    } catch (e) {
-      console.error(e);
-      setWhyHereText("");
-    } finally {
-      setIsWhyHereLoading(false);
+    const init: Annotation = {
+      sceneId: sceneIdStr,
+      keyWords,
+      keySentencePicks,
+      keySentenceRanges: ranges,
+      baseText: t,
+    };
+
+    setAnnotation(init);
+    saveAnn(sceneIdStr, init);
+  }, [props.showAnnotation, sceneIdStr, currentSceneIndex, editedText]);
+
+  // --- ③ render highlights ---
+  useEffect(() => {
+    const el = scriptRef.current;
+    // @ts-ignore
+    if (!window.CSS?.highlights) return;
+    // @ts-ignore
+    CSS.highlights.clear();
+
+    if (!props.showAnnotation || !annotation || !el) return;
+
+    const text = normalizeText(el.textContent ?? "");
+
+    // keywords
+    const kwPairs = findKeywordRanges(text, annotation.keyWords);
+
+    // sentences (clamp)
+    const sentPairs: Array<[number, number]> = annotation.keySentenceRanges.map(r => {
+      const s = Math.max(0, Math.min(r.start, text.length));
+      const e = Math.max(s, Math.min(r.end, text.length));
+      return [s, e];
+    });
+
+    const kwDom: Range[] = [];
+    for (const [s, e] of kwPairs) {
+      const rr = makeDomRange(el, s, e);
+      if (rr) kwDom.push(rr);
     }
-  }
+
+    const sentDom: Range[] = [];
+    for (const [s, e] of sentPairs) {
+      const rr = makeDomRange(el, s, e);
+      if (rr) sentDom.push(rr);
+    }
+
+    // @ts-ignore
+    CSS.highlights.set("kw", new Highlight(...kwDom));
+    // @ts-ignore
+    CSS.highlights.set("sent", new Highlight(...sentDom));
+  }, [props.showAnnotation, annotation, currentSceneIndex]);
 
 
   return (
@@ -419,98 +693,66 @@ const Edit = (props: EditProps) => {
           {props.showSearch && (
             <div className="searchBar">
               <input
-                ref={searchInputRef}
                 type="text"
                 placeholder="Search in script..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={
                   (e) => {
                     if (e.key === "Enter") {
-                      e.preventDefault();
-                      // 搜索框为空时清空高亮，否则显示高亮
-                      setShowHighlight(searchTerm.trim() !== "");
-                      setShowWhyHereState(true);
-                      setSearchTriggered(prev => !prev);
-                      // 将光标设置到末尾
-                      setTimeout(() => {
-                        if (searchInputRef.current) {
-                          const len = searchInputRef.current.value.length;
-                          searchInputRef.current.setSelectionRange(len, len);
-                        }
-                      }, 0);
-                      // 调接口拿 why here 文本
-                      fetchWhyHere(searchInputRef.current?.value || "", editedText[currentSceneIndex] || []);
+                      setShowWhyHereState(true)
                     }
                   }
                 }
               />
               <div
                 className='searchButton'
-                onMouseDown={(e) => {
-                  e.preventDefault(); // 阻止焦点转移
-                  // 搜索框为空时清空高亮，否则显示高亮
-                  setShowHighlight((searchInputRef.current?.value || "").trim() !== "");
-                  setShowWhyHereState(true);
-                  setSearchTriggered(prev => !prev);
-                  // 将光标设置到末尾
-                  setTimeout(() => {
-                    if (searchInputRef.current) {
-                      const len = searchInputRef.current.value.length;
-                      searchInputRef.current.setSelectionRange(len, len);
-                      searchInputRef.current.focus();
-                    }
-                  }, 0);
-                  // 调接口拿 why here 文本
-                  fetchWhyHere(searchInputRef.current?.value || "", editedText[currentSceneIndex] || []);
-                }}
+                onClick={() => setShowWhyHereState(true)}
               ></div>
-            </div>
-          )}
-          {/* condition4 summary */}
-          {props.showSummary && (
-            <div className="summary" key={`summary-${currentSceneIndex}`}>
-              <div className="summaryTitle">Writing Rationale</div>
-              <p className="summaryContent">
-                {currentScene.rationale || "This is a placeholder summary for the current scene. It will be replaced with an AI-generated summary once the backend is implemented. It will be replaced with an AI-generated summary once the backend is implemented."}
-              </p>
             </div>
           )}
           <div className='script'>
             {props.showAnnotation ? (
-              <LexicalEditor
-                key={String(currentScene.id)}
-                value={editedText[currentSceneIndex] || []}
-                sceneKey={Number(currentScene.id)}
-                annotations={currentScene.annotations?.paragraphs || []}
-                onBlurCommit={(lines) => {
-                  setEditedText((prev) => {
-                    const copy = prev.map((arr) => [...arr]);
+              <div
+                className="scriptText"
+                key={currentSceneIndex}
+                contentEditable
+                suppressContentEditableWarning
+                ref={scriptRef}
+                onInput={(e) => {
+                  const next = normalizeText(e.currentTarget.textContent || "");
+                  const prev = prevTextRef.current;
+
+                  setLiveText(next);
+
+                  setAnnotation(prevAnn => {
+                    if (!prevAnn) return prevAnn;
+
+                    const diff = computeSimpleDiff(prev, next);
+                    if (!diff) return prevAnn;
+
+                    const updated: Annotation = {
+                      ...prevAnn,
+                      keySentenceRanges: updateSentenceRangesOnEdit(prevAnn.keySentenceRanges, diff),
+                      // 关键词如果你也是用“动态正则匹配”，不需要存 ranges；每次渲染会重新 findKeywordRanges
+                    };
+
+                    saveAnn(updated.sceneId, updated); // 持久化：刷新/回来一致
+                    return updated;
+                  });
+
+                  prevTextRef.current = next;
+                }}
+                onBlur={(e) => {
+                  const raw = (e.currentTarget.innerText || "").replace(/\r/g, "");
+                  let lines = raw.split("\n");
+                  while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+
+                  setEditedText(prev => {
+                    const copy = prev.map(arr => [...arr]);
                     copy[currentSceneIndex] = lines;
                     saveDraftToStorage(editedMainTitle, editedSubTitle, copy, editedImg);
                     return copy;
                   });
                 }}
-              />
-            ) : props.showSearch ? (
-              <LexicalEditor
-                key={`search-${String(currentScene.id)}`}
-                value={editedText[currentSceneIndex] || []}
-                sceneKey={Number(currentScene.id)}
-                onBlurCommit={(lines) => {
-                  setEditedText((prev) => {
-                    const copy = prev.map((arr) => [...arr]);
-                    copy[currentSceneIndex] = lines;
-                    saveDraftToStorage(editedMainTitle, editedSubTitle, copy, editedImg);
-                    return copy;
-                  });
-                }}
-                // ✅ search
-                searchTerm={searchTerm}
-                highlightEnabled={showHighlight}
-                searchTriggered={searchTriggered}
-                wholeWordOnly={true}
-                searchInputRef={searchInputRef}
               />
             ) : (
               <div
@@ -541,6 +783,7 @@ const Edit = (props: EditProps) => {
               className={`preBtn ${isFirst ? "invalideBtn" : ""}`}
               onClick={() => {
                 goPrev();
+                setShowWhyHereState(false);
               }}
             >
             </div>
@@ -548,6 +791,7 @@ const Edit = (props: EditProps) => {
               className='nextBtn'
               onClick={() => {
                 goNext();
+                setShowWhyHereState(false);
               }}
             >
             </div>
@@ -611,7 +855,7 @@ const Edit = (props: EditProps) => {
                     navigate('/final');
                     setShowConfirm(false);
                     setIsGenerating(false);
-                  }, 1000);
+                  }, 3000);
 
                 }}
               >
@@ -625,9 +869,6 @@ const Edit = (props: EditProps) => {
       {props.showWhyHere && showWhyHereState && (
         <div className="whyHere">
           <p>Why here?</p>
-          <p>{
-            isWhyHereLoading ? <Spinner /> : (whyHereText || "Search a term to see its role in this scene.")
-          }</p>
         </div>
       )}
       {/* Alternative */}
@@ -691,4 +932,4 @@ const Edit = (props: EditProps) => {
   )
 }
 
-export default Edit
+export default Edit1

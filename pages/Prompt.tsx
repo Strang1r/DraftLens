@@ -19,11 +19,82 @@ const Prompt = () => {
     instruction,
     mainTitle: "THE ORIGINS OF THE INTERNET",
     scenes: [
-      { id: 1, subTitle: `Scene1: 1`, img: "/assets/1.png", text: [`Today’s Internet is widely seen as essential infrastructure, but it originated in a much narrower research context. Its early development was driven not by commercial demand, but by Cold War–era challenges in computing and communication. In the late 1960s, U.S. government-funded researchers created ARPANET to connect scarce computing resources across institutions.`, `ARPANET introduced packet-based, decentralized data transmission, allowing information to travel along multiple paths and remain functional despite failures. Although limited in scale, these experiments established core networking principles that later enabled the Internet to expand beyond research and support global communication.`] },
-      { id: 2, subTitle: `Scene2: 2`, img: "/assets/2.png", text: [`ARPANET introduced packet-based, decentralized data transmission, allowing information to travel along multiple paths and remain functional despite failures. Although limited in scale, these experiments established core networking principles that later enabled the Internet to expand beyond research and support global communication.`] },
-      { id: 3, subTitle: `Scene3: 3`, img: "/assets/3.png", text: [`Today’s Internet is widely seen as essential infrastructure, but it originated in a much narrower research context. Its early development was driven not by commercial demand, but by Cold War–era challenges in computing and communication. In the late 1960s, U.S. government-funded researchers created ARPANET to connect scarce computing resources across institutions.`] },
-      { id: 4, subTitle: `Scene4: 4`, img: "/assets/4.png", text: [`ARPANET introduced packet-based, decentralized data transmission, allowing information to travel along multiple paths and remain functional despite failures. Although limited in scale, these experiments established core networking principles that later enabled the Internet to expand beyond research and support global communication.`] },
-      { id: 5, subTitle: `Scene5: 5`, img: "/assets/5.png", text: [`Today’s Internet is widely seen as essential infrastructure, but it originated in a much narrower research context. Its early development was driven not by commercial demand, but by Cold War–era challenges in computing and communication. In the late 1960s, U.S. government-funded researchers created ARPANET to connect scarce computing resources across institutions.`] },
+      {
+        id: 1, subTitle: `Scene1: 1`,
+        annotations: {
+          paragraphs: [
+            {
+              keyWords: ["ARPANET", "Cold War"],
+              keySentences: [
+                "In the late 1960s, U.S. government-funded researchers created ARPANET to connect scarce computing resources across institutions."
+              ]
+            },
+            {
+              keyWords: ["packet-based", "decentralized"],
+              keySentences: [
+                "ARPANET introduced packet-based, decentralized data transmission, allowing information to travel along multiple paths and remain functional despite failures."
+              ]
+            }
+          ]
+        },
+        img: "/assets/1.png", text: [`Today’s Internet is widely seen as essential infrastructure, but it originated in a much narrower research context. Its early development was driven not by commercial demand, but by Cold War–era challenges in computing and communication. In the late 1960s, U.S. government-funded researchers created ARPANET to connect scarce computing resources across institutions.`, `ARPANET introduced packet-based, decentralized data transmission, allowing information to travel along multiple paths and remain functional despite failures. Although limited in scale, these experiments established core networking principles that later enabled the Internet to expand beyond research and support global communication.`]
+      },
+      {
+        id: 2, subTitle: `Scene2: 2`,
+        annotations: {
+          paragraphs: [
+            {
+              keyWords: ["ARPANET", "Cold War"],
+              keySentences: [
+                "In the late 1960s, U.S. government-funded researchers created ARPANET to connect scarce computing resources across institutions."
+              ]
+            },
+          ]
+        },
+        img: "/assets/2.png", text: [`ARPANET introduced packet-based, decentralized data transmission, allowing information to travel along multiple paths and remain functional despite failures. Although limited in scale, these experiments established core networking principles that later enabled the Internet to expand beyond research and support global communication.`]
+      },
+      {
+        id: 3, subTitle: `Scene3: 3`,
+        annotations: {
+          paragraphs: [
+            {
+              keyWords: ["ARPANET", "Cold War"],
+              keySentences: [
+                "In the late 1960s, U.S. government-funded researchers created ARPANET to connect scarce computing resources across institutions."
+              ]
+            },
+          ]
+        },
+        img: "/assets/3.png", text: [`Today’s Internet is widely seen as essential infrastructure, but it originated in a much narrower research context. Its early development was driven not by commercial demand, but by Cold War–era challenges in computing and communication. In the late 1960s, U.S. government-funded researchers created ARPANET to connect scarce computing resources across institutions.`]
+      },
+      {
+        id: 4, subTitle: `Scene4: 4`, img: "/assets/4.png",
+        annotations: {
+          paragraphs: [
+            {
+              keyWords: ["ARPANET", "Cold War"],
+              keySentences: [
+                "In the late 1960s, U.S. government-funded researchers created ARPANET to connect scarce computing resources across institutions."
+              ]
+            },
+          ]
+        },
+        text: [`ARPANET introduced packet-based, decentralized data transmission, allowing information to travel along multiple paths and remain functional despite failures. Although limited in scale, these experiments established core networking principles that later enabled the Internet to expand beyond research and support global communication.`]
+      },
+      {
+        id: 5, subTitle: `Scene5: 5`, img: "/assets/5.png",
+        annotations: {
+          paragraphs: [
+            {
+              keyWords: ["ARPANET", "Cold War"],
+              keySentences: [
+                "In the late 1960s, U.S. government-funded researchers created ARPANET to connect scarce computing resources across institutions."
+              ]
+            },
+          ]
+        },
+        text: [`Today’s Internet is widely seen as essential infrastructure, but it originated in a much narrower research context. Its early development was driven not by commercial demand, but by Cold War–era challenges in computing and communication. In the late 1960s, U.S. government-funded researchers created ARPANET to connect scarce computing resources across institutions.`]
+      },
     ],
   });
 

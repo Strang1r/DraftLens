@@ -227,17 +227,18 @@
         position: relative;
         flex: 0 0 auto; // 固定高度，不参与撑开
         margin-top: calc(30 / 1080 * 100vh);
+        margin-bottom: calc(-12 / 1080 * 100vh);
         display: flex;
         align-items: center;
         justify-content: flex-end;
 
         input {
           box-sizing: border-box;
-          width: calc(250 / 1920 * 100vw);
-          height: calc(44 / 1080 * 100vh);
+          width: calc(254 / 1920 * 100vw);
+          height: calc(46 / 1080 * 100vh);
           padding: 0 calc(40 / 1920 * 100vw) 0 calc(15 / 1920 * 100vw);
           border-radius: calc(2 / 1080 * 100vh);
-          border: solid calc(1 / 1920 * 100vw) #d3ceca;
+          border: solid calc(1 / 1920 * 100vw) #cfc6c0;
           background: #fcfcfb;
 
           font-size: calc(16 / 1080 * 100vh);
@@ -245,7 +246,7 @@
 
           &:focus {
             outline: none;
-            border-color: #6f6662;
+            border-color: #776353;
           }
 
           &::placeholder {
@@ -266,6 +267,35 @@
         }
       }
 
+      .summary {
+        flex: 0 0 auto; // 或者只写 flex-shrink: 0;
+        flex-shrink: 0;
+        min-height: calc(100 / 1080 * 100vh);
+        width: 100%;
+        margin-top: calc(30 / 1080 * 100vh);
+        margin-bottom: calc(-20 / 1080 * 100vh);
+        background-color: #fbf8f3;
+        border-radius: calc(2 / 1080 * 100vh);
+        padding: calc(26 / 1080 * 100vh) calc(40 / 1920 * 100vw);
+        box-sizing: border-box;
+        z-index: 9;
+        animation: fadeIn 0.8s ease-out;
+
+        .summaryTitle {
+          font-size: calc(16.5 / 1080 * 100vh);
+          color: #3e3b39;
+          font-weight: 600;
+          margin-bottom: calc(12 / 1080 * 100vh);
+        }
+
+        .summaryContent {
+          font-size: calc(15.8 / 1080 * 100vh);
+          text-align: justify;
+          color: #5f5b57;
+          line-height: 1.8;
+        }
+      }
+
       .script {
         flex: 1 1 auto;
         min-height: 0;
@@ -275,7 +305,7 @@
           width: 0;
         }
 
-        /*     .scriptText {
+        /* .scriptText {
           margin-top: calc(40 / 1080 * 100vh);
 
           &:focus {
@@ -320,7 +350,7 @@
           p:last-child {
             margin-bottom: 0;
           }
-        } */
+        }  */
 
         .scriptText {
           margin-top: calc(40 / 1080 * 100vh);
@@ -338,6 +368,7 @@
             background: #f3e4d6;
           }
         }
+
       }
 
       .btnArea {
@@ -584,10 +615,13 @@
 .whyHere {
   position: absolute;
   top: calc(320 / 1080 * 100vh);
-  right: calc(53 / 1920 * 100vw);
-  height: calc(262 / 1080 * 100vh);
-  width: calc(262 / 1920 * 100vw);
+  right: calc(45 / 1920 * 100vw);
+  min-height: calc(262 / 1080 * 100vh);
+  max-height: calc(600 / 1080 * 100vh);
+  width: calc(270 / 1920 * 100vw);
   background-color: #fbf8f3;
+  padding: calc(30 / 1080 * 100vh) calc(20 / 1920 * 100vw);
+  box-sizing: border-box;
   border: none;
   background:
     repeating-linear-gradient(to right,
@@ -610,11 +644,17 @@
 
   border-radius: calc(2 / 1080 * 100vh);
 
-  p {
-    font-size: calc(14 / 1080 * 100vh);
-    color: #776353;
-    font-weight: 500;
-    margin: 0;
+  p:first-child {
+    font-size: calc(16 / 1080 * 100vh);
+    color: #444444;
+    font-weight: 600;
+    margin-bottom: calc(10 / 1080 * 100vh);
+  }
+
+  p:last-child {
+    font-size: calc(15.5 / 1080 * 100vh);
+    color: #666;
+    line-height: 1.8;
   }
 }
 
@@ -784,5 +824,29 @@
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+.annotatedPreview {
+  margin-top: calc(18 / 1080 * 100vh);
+
+  p {
+    font-size: calc(17 / 1080 * 100vh);
+    line-height: 2;
+    color: #222;
+    margin-bottom: calc(20 / 1080 * 100vh);
+    text-align: justify;
+  }
+
+  .kwMark {
+    background-color: #f3e4d6; // 你想要的浅棕高亮
+    padding: calc(6 / 1920 * 100vw) calc(4 / 1920 * 100vw);
+  }
+
+  .sentUnderline {
+    text-decoration: underline;
+    text-decoration-style: solid;
+    text-underline-offset: calc(10 / 1080 * 100vh);
+    text-decoration-thickness: calc(1 / 1080 * 100vh);
   }
 }
