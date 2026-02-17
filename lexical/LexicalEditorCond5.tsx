@@ -1,71 +1,99 @@
-import { useEffect } from "react";
+// LexicalEditorCondition5.tsx
+import React, { useEffect } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
+
+import AnnotationOnBlurPlugin, { applyAnnotationsToRoot } from "./plugins/AnnotationOnBlurPlugin";
+import SearchHighlightLivePlugin from "./plugins/SearchHighlightLivePlugin";
+import { SentenceIssueNode } from "./nodes/SentenceIssueNode";
+import SentenceIssuePlugin from "./plugins/SentenceIssuePlugin";
+import type { SentenceIssue } from "./plugins/SentenceIssuePlugin";
+
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import AnnotationOnBlurPlugin, { applyAnnotationsToRoot } from "./AnnotationOnBlurPlugin";
-import SearchHighlightLivePlugin from "./SearchHighlightLivePlugin";
 import {
   $createParagraphNode,
   $createTextNode,
+  $getRoot,
+  $isParagraphNode,
   BLUR_COMMAND,
   COMMAND_PRIORITY_LOW,
-  $isParagraphNode,
   $getSelection,
   $isRangeSelection,
   $setSelection,
   $createRangeSelection,
-  $getRoot,
 } from "lexical";
 
-type ParagraphAnnotation = {
-  keyWords: string[];
-  keySentences: string[];
-};
+// 复用原来的类型
+type ParagraphAnnotation = { keyWords: string[]; keySentences: string[] };
 
 type Props = {
-  value: string[]; // 每个段落一条 string
+  value: string[];
   sceneKey: number;
   onBlurCommit: (lines: string[]) => void;
-  annotations?: ParagraphAnnotation[]; // 与 value 一一对应（按段落）
+  annotations?: ParagraphAnnotation[];
 
-  // condition3 
+  // condition3
   searchTerm?: string;
   highlightEnabled?: boolean;
-  searchTriggered?: boolean; // 用户是否主动搜索
-  wholeWordOnly?: boolean; // 是否只匹配完整词
-  searchInputRef?: React.RefObject<HTMLInputElement | null>; // 搜索框ref
+  searchTriggered?: boolean;
+  wholeWordOnly?: boolean;
+  searchInputRef?: React.RefObject<HTMLInputElement | null>;
+
+  // condition5 新增
+  issues?: SentenceIssue[];
+  onSelectIssue?: (id: string) => void;
 };
 
-// 从 root 的子节点按段落取文本，避免段落间空行被存进去
+// ===== 下面这些 helper 直接复制你的（不改逻辑）=====
 function getParagraphLines() {
   const root = $getRoot();
   const children = root.getChildren();
-
   const lines: string[] = [];
   for (const node of children) {
-    if ($isParagraphNode(node)) {
-      lines.push(node.getTextContent());
-    } else {
-      // 保险：非段落也取一下
-      lines.push(node.getTextContent());
-    }
+    if ($isParagraphNode(node)) lines.push(node.getTextContent());
+    else lines.push(node.getTextContent());
   }
-
-  // 去掉末尾多余空段（但保留中间空段）
   while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
   return lines;
 }
-
 function flattenAnnotations(annotations: ParagraphAnnotation[]) {
   return {
     keyWords: annotations.flatMap((a) => a?.keyWords ?? []),
     keySentences: annotations.flatMap((a) => a?.keySentences ?? []),
   };
 }
+function getGlobalOffsetFromSelection(): number {
+  const selection = $getSelection();
+  if (!$isRangeSelection(selection)) return 0;
+  const root = $getRoot();
+  const anchor = selection.anchor;
+  let count = 0;
+  const textNodes = root.getAllTextNodes();
+  for (const n of textNodes) {
+    if (n.getKey() === anchor.key) break;
+    count += n.getTextContentSize();
+  }
+  return count + anchor.offset;
+}
+function restoreSelectionByGlobalOffset(globalOffset: number) {
+  const root = $getRoot();
+  const textNodes = root.getAllTextNodes();
+  let remain = globalOffset;
+  for (const n of textNodes) {
+    const size = n.getTextContentSize();
+    if (remain <= size) {
+      const sel = $createRangeSelection();
+      sel.anchor.set(n.getKey(), Math.max(0, remain), "text");
+      sel.focus.set(n.getKey(), Math.max(0, remain), "text");
+      $setSelection(sel);
+      return;
+    }
+    remain -= size;
+  }
+}
 
-// 外部 value -> editor 内容（scene 切换 / 父组件 setEditedText 后同步）
 function SyncValuePlugin({
   value,
   sceneKey,
@@ -90,7 +118,6 @@ function SyncValuePlugin({
 
       if (value.length === 0) root.append($createParagraphNode());
 
-      // ✅ 同步后立即标注（当前版本：先 flatten 成全局应用）
       const { keyWords, keySentences } = flattenAnnotations(annotations);
       applyAnnotationsToRoot(keyWords, keySentences);
     });
@@ -99,42 +126,6 @@ function SyncValuePlugin({
   return null;
 }
 
-function getGlobalOffsetFromSelection(): number {
-  const selection = $getSelection();
-  if (!$isRangeSelection(selection)) return 0;
-
-  const root = $getRoot();
-  const anchor = selection.anchor;
-
-  let count = 0;
-  const textNodes = root.getAllTextNodes();
-
-  for (const n of textNodes) {
-    if (n.getKey() === anchor.key) break;
-    count += n.getTextContentSize();
-  }
-  return count + anchor.offset;
-}
-
-function restoreSelectionByGlobalOffset(globalOffset: number) {
-  const root = $getRoot();
-  const textNodes = root.getAllTextNodes();
-
-  let remain = globalOffset;
-  for (const n of textNodes) {
-    const size = n.getTextContentSize();
-    if (remain <= size) {
-      const sel = $createRangeSelection();
-      sel.anchor.set(n.getKey(), Math.max(0, remain), "text");
-      sel.focus.set(n.getKey(), Math.max(0, remain), "text");
-      $setSelection(sel);
-      return;
-    }
-    remain -= size;
-  }
-}
-
-// editor blur -> 回传纯文本 lines
 export function BlurCommitPlugin({
   onBlurCommit,
   annotations = [],
@@ -152,13 +143,11 @@ export function BlurCommitPlugin({
     return editor.registerCommand(
       BLUR_COMMAND,
       () => {
-        // 1) 读 selection -> 全文 offset
         let globalOffset = 0;
         editor.getEditorState().read(() => {
           globalOffset = getGlobalOffsetFromSelection();
         });
 
-        // 2) commit +（可选）更新标注 + 恢复 selection
         editor.update(() => {
           onBlurCommit(getParagraphLines());
 
@@ -178,7 +167,7 @@ export function BlurCommitPlugin({
   return null;
 }
 
-export default function LexicalEditor({
+export default function LexicalEditorCondition5({
   value,
   sceneKey,
   onBlurCommit,
@@ -188,9 +177,12 @@ export default function LexicalEditor({
   searchTriggered,
   wholeWordOnly,
   searchInputRef,
+  issues = [],
+  onSelectIssue,
 }: Props) {
   const initialConfig = {
-    namespace: "DraftLensEditor",
+    namespace: "DraftLensEditorC5",
+    nodes: [SentenceIssueNode], // ✅ 只在 condition5 editor 注册 node
     onError(error: Error) {
       console.error(error);
     },
@@ -207,24 +199,11 @@ export default function LexicalEditor({
       />
       <HistoryPlugin />
 
-      {/* 这个插件你目前 enabled=false，相当于不靠它自动刷新 */}
-      <AnnotationOnBlurPlugin
-        enabled={false}
-        keyWords={flat.keyWords}
-        keySentences={flat.keySentences}
-      />
+      <AnnotationOnBlurPlugin enabled={false} keyWords={flat.keyWords} keySentences={flat.keySentences} />
 
-      <SyncValuePlugin
-        value={value}
-        sceneKey={sceneKey}
-        annotations={annotations}
-      />
+      <SyncValuePlugin value={value} sceneKey={sceneKey} annotations={annotations} />
 
-      <BlurCommitPlugin
-        onBlurCommit={onBlurCommit}
-        annotations={annotations}
-        updateAnnotationsOnBlur={false} // 想 blur 后自动重新 apply 就改 true
-      />
+      <BlurCommitPlugin onBlurCommit={onBlurCommit} annotations={annotations} updateAnnotationsOnBlur={false} />
 
       <SearchHighlightLivePlugin
         enabled={!!highlightEnabled && !!searchTerm?.trim()}
@@ -235,6 +214,9 @@ export default function LexicalEditor({
         wholeWordOnly={wholeWordOnly}
         searchInputRef={searchInputRef}
       />
+
+      {/* ✅ condition5 专属：句子问题标注 */}
+      <SentenceIssuePlugin issues={issues} onSelectIssue={onSelectIssue} />
     </LexicalComposer>
   );
 }

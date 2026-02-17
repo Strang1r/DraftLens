@@ -37,6 +37,13 @@ const Prompt = () => {
             }
           ]
         },
+        sentenceIssues: [
+          {
+            id: "s1",
+            sentence: "Although limited in scale, these experiments established core networking principles that later enabled the Internet to expand beyond research and support global communication.",
+            issue: "Similar phrasing appears in many AI-generated summaries.",
+          },
+        ],
         img: "/assets/1.png", text: [`Today’s Internet is widely seen as essential infrastructure, but it originated in a much narrower research context. Its early development was driven not by commercial demand, but by Cold War–era challenges in computing and communication. In the late 1960s, U.S. government-funded researchers created ARPANET to connect scarce computing resources across institutions.`, `ARPANET introduced packet-based, decentralized data transmission, allowing information to travel along multiple paths and remain functional despite failures. Although limited in scale, these experiments established core networking principles that later enabled the Internet to expand beyond research and support global communication.`]
       },
       {
@@ -51,6 +58,13 @@ const Prompt = () => {
             },
           ]
         },
+        sentenceIssues: [
+          {
+            id: "s1",
+            sentence: "ARPANET introduced packet-based, decentralized data transmission, allowing information to travel along multiple paths and remain functional despite failures.",
+            issue: "Similar phrasing appears in many AI-generated summaries.",
+          },
+        ],
         img: "/assets/2.png", text: [`ARPANET introduced packet-based, decentralized data transmission, allowing information to travel along multiple paths and remain functional despite failures. Although limited in scale, these experiments established core networking principles that later enabled the Internet to expand beyond research and support global communication.`]
       },
       {
@@ -162,10 +176,20 @@ const Prompt = () => {
       console.warn("⚠️ Using fallback because backend/AI unavailable:", reason);
       const draft = makeDraftFallback(instruction);
       sessionStorage.setItem("draft", JSON.stringify(draft));
+
+      // 新增：把每个 scene 的问题句整理成 issuesByScene
+      const issuesByScene: Record<number, any[]> = {};
+      (draft.scenes || []).forEach((s: any) => {
+        const sid = Number(s.id);
+        issuesByScene[sid] =
+          s.SentenceIssue ?? s.sentenceIssues ?? s.issues ?? []; // 兼容你现在的字段名
+      });
+      sessionStorage.setItem("issuesByScene", JSON.stringify(issuesByScene));
       navigate("/final");
     };
 
     try {
+      // 1) 生成 draft
       const res = await fetch("http://localhost:3001/api/script/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -181,19 +205,48 @@ const Prompt = () => {
 
       const data = await res.json(); // { draft, error? }
 
-      // 兼容旧后端返回：
-      // 新版期望：data.draft
-      // 老版可能：{ mode:"single", draft } 或 { mode:"select", options:[...] }
-      /* const draft =
-        data?.draft ??
-        (data?.mode === "single" ? data?.draft : null) ??
-        (Array.isArray(data?.options) ? data.options[0] : null);
- */
       const draft = data?.draft;
 
       if (!draft) {
         goWithFallback("no_draft_in_response");
         return;
+      }
+
+      if (conditionId === "5") {
+        try {
+          const scenes = Array.isArray(draft?.scenes) ? draft.scenes : [];
+
+          const results = await Promise.all(
+            scenes.map(async (s: any) => {
+              const sceneId = Number(s.id);
+              const sceneText: string[] = Array.isArray(s.text) ? s.text.map(String) : [];
+
+              const r = await fetch("http://localhost:3001/api/script/issues", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sceneText }),
+              });
+
+              if (!r.ok) {
+                // 单个 scene issues 失败：给空数组，不影响整体
+                return [sceneId, []] as const;
+              }
+
+              const j = await r.json(); // { issues: [...] }
+              const issues = Array.isArray(j?.issues) ? j.issues : [];
+              return [sceneId, issues] as const;
+            })
+          );
+
+          const issuesByScene = Object.fromEntries(results);
+          sessionStorage.setItem("issuesByScene", JSON.stringify(issuesByScene));
+        } catch (err) {
+          console.warn("prefetch issues failed:", err);
+          sessionStorage.removeItem("issuesByScene");
+        }
+      } else {
+        // 非 condition5：清理旧缓存，避免串条件
+        sessionStorage.removeItem("issuesByScene");
       }
 
       sessionStorage.setItem("draft", JSON.stringify(draft));

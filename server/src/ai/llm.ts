@@ -59,6 +59,27 @@ const SceneRationaleSchema = z.object({
 });
 export type SceneRationale = z.infer<typeof SceneRationaleSchema>;
 
+// condition5 suggestion
+export const SentenceIssuesSchema = z.object({
+  issues: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        sentence: z.string().min(1),
+        issue: z.string().min(1),
+      })
+    )
+    .min(0)
+    .max(2),
+});
+
+export type SentenceIssues = z.infer<typeof SentenceIssuesSchema>;
+
+const IssueSuggestionSchema = z.object({
+  suggestion: z.string().min(1),
+});
+export type IssueSuggestion = z.infer<typeof IssueSuggestionSchema>;
+
 const SceneAlternativesSchema = z.object({
   conversational: z.object({
     text: z.array(z.string().min(1)).min(1).max(3),
@@ -242,14 +263,14 @@ Return JSON with EXACT key:
 
 paragraphs is an array with the SAME length as the input paragraphs.
 Each paragraphs[i] MUST contain EXACT keys:
-- keyWords: string[] (1-2 items)
+- keyWords: string[] (0-2 items)
 - keySentences: string[] (0-1 item)
 
 Rules:
 - Language: English only.
 - Treat each paragraph independently.
 - For EACH paragraph:
-  - keyWords: pick 1-2 short terms/phrases (<= 3 words each) that APPEAR in that paragraph.
+  - keyWords: pick 0-2 short terms/phrases (<= 3 words each) that APPEAR in that paragraph.
   - keySentences: pick at most ONE sentence excerpt copied EXACTLY from that paragraph.
     Must be a contiguous substring with identical punctuation/spaces.
 - Do NOT invent facts. Do NOT paraphrase.
@@ -397,4 +418,155 @@ ${paragraphs.join("\n\n")}
   }
 
   return SceneRationaleSchema.parse(parsed);
+}
+
+export async function generateSentenceIssuesFromLLM(args: {
+  sceneText: string[] | string;
+}): Promise<SentenceIssues> {
+  const paragraphs = Array.isArray(args.sceneText)
+    ? args.sceneText.map((p) => String(p ?? ""))
+    : String(args.sceneText || "").split(/\n\s*\n/).filter(Boolean);
+
+  const fullText = paragraphs.join("\n\n");
+
+  const system = `
+You identify 0-2 sentences in a scene that may need revision, as STRICT JSON only.
+
+Return JSON with EXACT key:
+- issues
+
+issues is an array of 0-2 objects. Each object MUST have EXACT keys:
+- id: string ("s1" or "s2" ...)
+- sentence: string
+- issue: string
+
+Rules:
+- Language: English only.
+- Pick 1-2 sentences that are likely to need revision (examples: overly generic/neutral phrasing, repetitive/templated AI style, ambiguity, missing specificity, claims that should be verified, unclear causality or something similar).
+- IMPORTANT: sentence MUST be copied EXACTLY from the provided scene text, including punctuation and spacing. Do NOT paraphrase.
+- issue MUST describe the problem in <= 15 words.
+- If nothing seems problematic, return issues: [].
+- No markdown. Output MUST be valid JSON parsable by JSON.parse.
+`.trim();
+
+  const user = `
+Scene text:
+${fullText}
+`.trim();
+
+  const req = client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.2,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  });
+
+  const resp = await withTimeout(req, 15000, "sentence_issues_timeout");
+  const content = resp.choices?.[0]?.message?.content ?? "{}";
+
+  console.log("LLM sentence issues response:", content);
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error("LLM returned non-JSON for sentence issues");
+  }
+
+  // 1) schema validate
+  const data = SentenceIssuesSchema.parse(parsed);
+
+  // 2) defensive fixes to help your frontend matching:
+  //    - ensure sentence exists in fullText
+  //    - force ids to "s1","s2" order
+  const filtered = (data.issues ?? []).filter((it) => {
+    const s = String(it.sentence ?? "").trim();
+    return s.length > 0 && fullText.includes(s);
+  });
+
+  const normalized = filtered.slice(0, 2).map((it, idx) => ({
+    id: `s${idx + 1}`,
+    sentence: it.sentence,
+    issue: it.issue,
+  }));
+
+  return { issues: normalized };
+}
+
+export async function generateIssueSuggestionFromLLM(args: {
+  sentence: string;
+  issue: string;
+  prevSuggestion?: string; // optional: used to force a different angle
+}): Promise<IssueSuggestion> {
+  const sentence = String(args.sentence ?? "").trim();
+  const issue = String(args.issue ?? "").trim();
+  const prev = String(args.prevSuggestion ?? "").trim();
+
+  if (!sentence || !issue) {
+    return { suggestion: "" };
+  }
+
+  const system = `
+You write ONE revision suggestion for a sentence as STRICT JSON only.
+Return JSON with EXACT key: suggestion. No other keys. No markdown.
+
+Constraints:
+- Language: English only.
+- suggestion: <= 50 words.
+- Give an actionable rewrite strategy (not just "be clearer").
+- Do NOT add new facts not implied by the sentence/issue.
+- Prefer concrete edits: specify what to add/remove/rephrase.
+
+If a previous suggestion is provided, your new suggestion MUST take a DIFFERENT angle:
+- use a different rewrite strategy or emphasis
+- avoid repeating the same phrasing
+`.trim();
+
+  const user = `
+Sentence:
+${sentence}
+
+Issue (<=15 words):
+${issue}
+
+Previous suggestion (if any):
+${prev || "(none)"}
+
+Now output a new suggestion as JSON:
+`.trim();
+
+  const req = client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.7, // 稍微高一点，保证“换角度”
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  });
+
+  const resp = await withTimeout(req, 15000, "issue_suggestion_timeout");
+  const content = resp.choices?.[0]?.message?.content ?? "{}";
+
+  console.log("LLM issue suggestion response:", content);
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error("LLM returned non-JSON for issue suggestion");
+  }
+
+  const out = IssueSuggestionSchema.parse(parsed);
+
+  // 防御：硬截断，避免偶发超长
+  const words = out.suggestion.trim().split(/\s+/).filter(Boolean);
+  if (words.length > 60) {
+    out.suggestion = words.slice(0, 60).join(" ");
+  }
+
+  return out;
 }

@@ -1,8 +1,11 @@
+import Edit from "../components/ScriptEdit"
 
 const Condition5 = () => {
   return (
     <div className="condition5">
-      condition5
+      <Edit
+        showSuggestion={true}
+      />
     </div>
   )
 }

@@ -612,7 +612,8 @@
   }
 }
 
-.whyHere {
+.whyHere,
+.suggestion {
   position: absolute;
   top: calc(320 / 1080 * 100vh);
   right: calc(45 / 1920 * 100vw);
@@ -651,10 +652,23 @@
     margin-bottom: calc(10 / 1080 * 100vh);
   }
 
-  p:last-child {
+  p:nth-child(2) {
     font-size: calc(15.5 / 1080 * 100vh);
     color: #666;
     line-height: 1.8;
+  }
+
+  .suggestionIcon::after {
+    position: absolute;
+    top: calc(27 / 1080 * 100vh);
+    right: calc(30 / 1920 * 100vw);
+    font-family: 'iconfont';
+    content: '\e61b';
+    display: inline-block;
+    margin-bottom: calc(10 / 1080 * 100vh);
+    font-size: calc(18 / 1080 * 100vh);
+    color: #776353;
+    cursor: pointer;
   }
 }
 
@@ -827,6 +841,7 @@
   }
 }
 
+// cond2 预览页关键词标注和句子下划线
 .annotatedPreview {
   margin-top: calc(18 / 1080 * 100vh);
 
@@ -839,7 +854,7 @@
   }
 
   .kwMark {
-    background-color: #f3e4d6; // 你想要的浅棕高亮
+    background-color: #f3e4d6;
     padding: calc(6 / 1920 * 100vw) calc(4 / 1920 * 100vw);
   }
 
@@ -848,5 +863,58 @@
     text-decoration-style: solid;
     text-underline-offset: calc(10 / 1080 * 100vh);
     text-decoration-thickness: calc(1 / 1080 * 100vh);
+  }
+}
+
+// cond5 叹号
+.sentenceIssueBang {
+  cursor: pointer;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  .issueIcon {
+    font-family: 'iconfont';
+    display: inline-block;
+    pointer-events: none;
+    margin-right: calc(6 / 1920 * 100vw);
+    font-size: calc(18 / 1080 * 100vh);
+    color: #c29e1e;
+
+    &::before {
+      content: '\e677';
+    }
+  }
+
+}
+
+.issueTooltip {
+  position: fixed !important;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  background: #4e4742;
+  max-width: calc(222 / 1920 * 100vw);
+  padding: calc(6 / 1920 * 100vw);
+  border-radius: calc(2 / 1080 * 100vh);
+  font-size: calc(14 / 1080 * 100vh);
+  color: #fff;
+  white-space: normal;
+  z-index: 99999;
+  opacity: 0;
+
+  &::after {
+    content: "";
+    position: absolute;
+    bottom: calc(-14 / 1080 * 100vh);
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: #4e4742;
+  }
+
+  &.visible {
+    opacity: 1;
   }
 }

@@ -4,8 +4,8 @@ import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import AnnotationOnBlurPlugin, { applyAnnotationsToRoot } from "./AnnotationOnBlurPlugin";
-import SearchHighlightLivePlugin from "./SearchHighlightLivePlugin";
+import AnnotationOnBlurPlugin, { applyAnnotationsToRoot } from "./plugins/AnnotationOnBlurPlugin";
+import SearchHighlightLivePlugin from "./plugins/SearchHighlightLivePlugin";
 import {
   $createParagraphNode,
   $createTextNode,

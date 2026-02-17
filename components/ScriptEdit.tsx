@@ -4,7 +4,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import './ScriptEdit.scss'
 import AlternativePop from './AlternativePop';
 import Spinner from './Spinner';
-import LexicalEditor from "./LexicalEditor";
+import LexicalEditor from "../lexical/LexicalEditor";
+import LexicalEditorCond5 from '../lexical/LexicalEditorCond5';
 
 type ParagraphAnnotation = {
   keyWords: string[];       // 1-2
@@ -19,7 +20,7 @@ type Scene = {
   annotations?: {
     paragraphs: ParagraphAnnotation[]; // 与 text.length 对齐
   };
-  rationale?: string; // condition4 专用
+  rationale?: string; // condition4 
 };
 
 type Draft = {
@@ -31,8 +32,9 @@ type EditProps = {
   showSearch?: boolean;
   showWhyHere?: boolean;
   showAlternative?: boolean;
-  showAnnotation?: boolean; // condition2 专用
-  showSummary?: boolean; // condition4 专用
+  showAnnotation?: boolean; // condition2 
+  showSummary?: boolean; // condition4 
+  showSuggestion?: boolean; // condition5 
 };
 
 type AltScene = {
@@ -41,6 +43,13 @@ type AltScene = {
   img: string;
   // 后端如果返回 tone 也可以收着
   tone?: "conversational" | "professional";
+};
+
+// condition5 
+type SentenceIssue = {
+  id: string;
+  sentence: string;
+  issue: string;
 };
 
 const Edit = (props: EditProps) => {
@@ -202,7 +211,7 @@ const Edit = (props: EditProps) => {
     setShowAlternativeState(false);
   };
 
-  // 替换“当前scene”的文本 + 图片
+  // condition1 替换“当前scene”的文本 + 图片
   const handleReplaceAll = (alt: { text: string[]; img: string }) => {
     const nextSub = [...editedSubTitle];
     const nextText = editedText.map(arr => [...arr]);
@@ -218,11 +227,9 @@ const Edit = (props: EditProps) => {
     setShowAlternativeState(false);
   };
 
-  // 调用后端接口获取替换选项（文本 + 图片）
+  // condition1 调用后端接口获取替换选项（文本 + 图片）
   const [alternativeScene, setAlternativeScene] = useState<AltScene[]>([]);
   const [altLoading, setAltLoading] = useState(false);
-  const [altError, setAltError] = useState<string | null>(null);
-
 
   const placeholderAlternatives: AltScene[] = [
     {
@@ -247,7 +254,6 @@ const Edit = (props: EditProps) => {
 
   const fetchAlternatives = async () => {
     setAltLoading(true);
-    setAltError(null);
 
     try {
       const res = await fetch("http://localhost:3001/api/script/alternatives", {
@@ -281,7 +287,6 @@ const Edit = (props: EditProps) => {
       setAlternativeScene(alts);
       return alts;
     } catch (e: any) {
-      setAltError(e?.message ?? "Failed to load alternatives");
       setAlternativeScene(placeholderAlternatives);
       return placeholderAlternatives;
     } finally {
@@ -289,10 +294,8 @@ const Edit = (props: EditProps) => {
     }
   };
 
-
   useEffect(() => {
     setAlternativeScene([]);
-    setAltError(null);
   }, [currentSceneIndex]);
 
   // 当前subtitle
@@ -309,7 +312,6 @@ const Edit = (props: EditProps) => {
     if (cached?.length) {
       setAlternativeScene(cached);
       setAltLoading(false);
-      setAltError(null);
       return;
     }
 
@@ -366,6 +368,95 @@ const Edit = (props: EditProps) => {
     }
   }
 
+  // condition5 句子问题
+  const [activeIssueId, setActiveIssueId] = useState<string | null>(null);
+
+  // condition5 从缓存拿 issues（如果有），避免每次切 scene 都丢
+  const [issuesByScene, setIssuesByScene] = useState<Record<number, SentenceIssue[]>>(() => {
+    try {
+      const raw = sessionStorage.getItem("issuesByScene");
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+  const issuesSceneId = Number(currentScene.id);
+  const issuesForThisScene = issuesByScene[issuesSceneId] ?? [];
+
+  // condition5 调接口拿 suggestion
+  const [suggestionText, setSuggestionText] = useState<string>("");
+  const [suggestionTextLoading, setSuggestionTextLoading] = useState(false);
+  useEffect(() => {
+    if (!activeIssueId) return;
+
+    const activeIssue = issuesForThisScene.find((x) => x.id === activeIssueId);
+    if (!activeIssue) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setSuggestionTextLoading(true);
+        setSuggestionText(""); // 可选：显示 loading 文案用
+        const res = await fetch("http://localhost:3001/api/script/issue-suggestion", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sentence: activeIssue.sentence,
+            issue: activeIssue.issue,
+            // 不传 prevSuggestion：第一次生成
+          }),
+        });
+
+        if (!res.ok) return;
+        const data = await res.json(); // { suggestion }
+
+        if (!cancelled) {
+          setSuggestionText(String(data?.suggestion ?? "").trim());
+        }
+      } catch (err) {
+        console.error("issue-suggestion failed:", err);
+      } finally {
+        setSuggestionTextLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeIssueId, issuesForThisScene]);
+
+  const handleClickSuggestion = async () => {
+    if (!activeIssueId) return;
+
+    const activeIssue = issuesForThisScene.find((x) => x.id === activeIssueId);
+    if (!activeIssue) return;
+
+    // 先保存旧 suggestion，避免清空 state 后传空字符串
+    const prev = suggestionText;
+
+    try {
+      setSuggestionTextLoading(true);
+      setSuggestionText("");
+      const res = await fetch("http://localhost:3001/api/script/issue-suggestion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sentence: activeIssue.sentence,
+          issue: activeIssue.issue,
+          prevSuggestion: prev, // ✅ 传上一次，触发“换角度”
+        }),
+      });
+
+      if (!res.ok) return;
+      const data = await res.json();
+      setSuggestionText(String(data?.suggestion ?? "").trim());
+    } catch (err) {
+      console.error("regenerate failed:", err);
+    } finally {
+      setSuggestionTextLoading(false);
+    }
+  };
 
   return (
     <div className="edit1BackGround">
@@ -464,7 +555,8 @@ const Edit = (props: EditProps) => {
                   // 调接口拿 why here 文本
                   fetchWhyHere(searchInputRef.current?.value || "", editedText[currentSceneIndex] || []);
                 }}
-              ></div>
+              >
+              </div>
             </div>
           )}
           {/* condition4 summary */}
@@ -505,12 +597,28 @@ const Edit = (props: EditProps) => {
                     return copy;
                   });
                 }}
-                // ✅ search
+                // search
                 searchTerm={searchTerm}
                 highlightEnabled={showHighlight}
                 searchTriggered={searchTriggered}
                 wholeWordOnly={true}
                 searchInputRef={searchInputRef}
+              />
+            ) : props.showSuggestion ? (
+              <LexicalEditorCond5
+                key={`suggestion-${String(currentScene.id)}`}
+                value={editedText[currentSceneIndex] || []}
+                sceneKey={Number(currentScene.id)}
+                onBlurCommit={(lines) => {
+                  setEditedText((prev) => {
+                    const copy = prev.map((arr) => [...arr]);
+                    copy[currentSceneIndex] = lines;
+                    saveDraftToStorage(editedMainTitle, editedSubTitle, copy, editedImg);
+                    return copy;
+                  });
+                }}
+                issues={issuesForThisScene}
+                onSelectIssue={(id) => setActiveIssueId(id)}
               />
             ) : (
               <div
@@ -532,15 +640,14 @@ const Edit = (props: EditProps) => {
                   });
                 }}
               />
-            )
-            }
-
+            )}
           </div>
           <div className='btnArea'>
             <div
               className={`preBtn ${isFirst ? "invalideBtn" : ""}`}
               onClick={() => {
                 goPrev();
+                setActiveIssueId(null);
               }}
             >
             </div>
@@ -548,6 +655,7 @@ const Edit = (props: EditProps) => {
               className='nextBtn'
               onClick={() => {
                 goNext();
+                setActiveIssueId(null);
               }}
             >
             </div>
@@ -628,6 +736,16 @@ const Edit = (props: EditProps) => {
           <p>{
             isWhyHereLoading ? <Spinner /> : (whyHereText || "Search a term to see its role in this scene.")
           }</p>
+        </div>
+      )}
+      {/* condition5 suggestion */}
+      {props.showSuggestion && activeIssueId && (
+        <div className="suggestion">
+          <p>Revision Suggestion</p>
+          <p>{
+            suggestionTextLoading ? <Spinner /> : (suggestionText || "Make the sentence more specific by naming one concrete driver (e.g., ARPA funding) and clarifying what 'research challenges' were.")
+          }</p>
+          <div className="suggestionIcon" onClick={handleClickSuggestion}></div>
         </div>
       )}
       {/* Alternative */}

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { generateDraftFromLLM, generateSceneImageBase64, generateSceneAlternativesFromLLM, generateWhyHereFromLLM, generateSceneRationaleFromLLM } from "../ai/llm";
+import { generateDraftFromLLM, generateSceneImageBase64, generateSceneAlternativesFromLLM, generateWhyHereFromLLM, generateSceneRationaleFromLLM, generateSentenceIssuesFromLLM, generateIssueSuggestionFromLLM } from "../ai/llm";
 import { withTimeout } from "../ai/llm";
 import { generateAnnotationsFromLLM } from "../ai/llm";
 
@@ -11,6 +11,10 @@ router.post("/generate", async (req, res) => {
 
   const { instruction, conditionId } = req.body ?? {};
   const safeInstruction = String(instruction ?? "").trim();
+
+  const cond = String(conditionId ?? "").trim(); // "1".."6"
+  const needAnnotations = cond === "2";
+  const needRationale = cond === "4";
 
   const makeDraftFallback = () => ({
     mainTitle: "THE ORIGINS OF THE INTERNET",
@@ -75,7 +79,7 @@ router.post("/generate", async (req, res) => {
       instruction: safeInstruction,
     } as any);
 
-    const scenesEnhanced = await Promise.all(
+    /* const scenesEnhanced = await Promise.all(
       draftRaw.scenes.map(async (scene: any) => {
         // 1) annotations（关键词/关键句）
         let annotations: any = {
@@ -109,6 +113,56 @@ router.post("/generate", async (req, res) => {
         }
 
         return { ...scene, annotations, rationale };
+      })
+    ); */
+
+    const scenesEnhanced = await Promise.all(
+      draftRaw.scenes.map(async (scene: any) => {
+        // 默认：不生成
+        let annotations: any = undefined;
+        let rationale: string | undefined = undefined;
+
+        // condition2 才生成 annotations
+        if (needAnnotations) {
+          annotations = {
+            paragraphs: scene.text.map(() => ({ keyWords: [], keySentences: [] })),
+          };
+          try {
+            annotations = await withTimeout(
+              generateAnnotationsFromLLM({ text: scene.text }),
+              15000,
+              "annotation_timeout"
+            );
+          } catch (e: any) {
+            console.warn("Annotation failed for scene:", scene.id, e?.message || e);
+          }
+        }
+
+        // condition4 才生成 rationale
+        if (needRationale) {
+          rationale = "";
+          try {
+            const out = await withTimeout(
+              generateSceneRationaleFromLLM({
+                mainTitle: draftRaw.mainTitle,
+                subTitle: scene.subTitle,
+                text: scene.text,
+              }),
+              15000,
+              "rationale_timeout"
+            );
+            rationale = out.rationale || "";
+          } catch (e: any) {
+            console.warn("Rationale failed for scene:", scene.id, e?.message || e);
+          }
+        }
+
+        // 只在需要时才把字段挂回去（避免其它 condition 前端看到多余字段）
+        return {
+          ...scene,
+          ...(needAnnotations ? { annotations } : {}),
+          ...(needRationale ? { rationale } : {}),
+        };
       })
     );
     // 需要图片就打开
@@ -205,6 +259,59 @@ router.post("/why-here", async (req, res) => {
   } catch (e: any) {
     console.error("why-here failed:", e?.message || e);
     return res.json({ explanation: "", error: "why_here_failed" });
+  }
+});
+
+router.post("/issues", async (req, res) => {
+  const { sceneText } = req.body ?? {};
+  const safeText: string[] = Array.isArray(sceneText) ? sceneText.map(String) : [];
+
+  if (safeText.length === 0) {
+    return res.status(400).json({ error: "missing_sceneText", issues: [] });
+  }
+
+  try {
+    const out = await withTimeout(
+      generateSentenceIssuesFromLLM({ sceneText: safeText }),
+      15000,
+      "issues_timeout"
+    );
+
+    // out: { issues: [{id,sentence,issue}] }
+    return res.json(out);
+  } catch (e: any) {
+    console.error("issues failed:", e?.message || e);
+    return res.json({ issues: [], error: "issues_failed" });
+  }
+});
+
+router.post("/issue-suggestion", async (req, res) => {
+  const { sentence, issue, prevSuggestion } = req.body ?? {};
+
+  const safeSentence = String(sentence ?? "").trim();
+  const safeIssue = String(issue ?? "").trim();
+  const safePrev = String(prevSuggestion ?? "").trim();
+
+  if (!safeSentence || !safeIssue) {
+    return res.status(400).json({ error: "missing_fields", suggestion: "" });
+  }
+
+  try {
+    const out = await withTimeout(
+      generateIssueSuggestionFromLLM({
+        sentence: safeSentence,
+        issue: safeIssue,
+        prevSuggestion: safePrev || undefined,
+      }),
+      15000,
+      "issue_suggestion_timeout"
+    );
+
+    // out: { suggestion }
+    return res.json(out);
+  } catch (e: any) {
+    console.error("issue-suggestion failed:", e?.message || e);
+    return res.json({ suggestion: "", error: "issue_suggestion_failed" });
   }
 });
 
