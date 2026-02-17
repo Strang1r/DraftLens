@@ -907,14 +907,27 @@
   &::after {
     content: "";
     position: absolute;
-    bottom: calc(-14 / 1080 * 100vh);
+    bottom: calc(-11 / 1080 * 100vh);
     left: 50%;
     transform: translateX(-50%);
-    border: 6px solid transparent;
+    border: calc(6 / 1080 * 100vh) solid transparent;
     border-top-color: #4e4742;
   }
 
   &.visible {
     opacity: 1;
   }
+}
+
+/* keyword 高亮 */
+mark[data-lexical-mark-ids~="kw"] {
+  background: #e6e1db;
+  padding: calc(5 / 1080 * 100vh) calc(4 / 1080 * 100vw);
+  border-radius: calc(4 / 1080 * 100vh);
+}
+
+/* key sentence 下划线 */
+mark[data-lexical-mark-ids~="ks"] {
+  border-bottom: calc(1 / 1080 * 100vh) solid #222;
+  padding-bottom: calc(5 / 1080 * 100vh);
 }

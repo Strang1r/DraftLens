@@ -1,4 +1,4 @@
-// src/components/AnnotationOnBlurPlugin.tsx
+// src/components/plugins/AnnotationCond5Plugin.tsx
 import { useEffect } from "react";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import {
@@ -13,19 +13,18 @@ function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// ✅ Condition2 only:
-// - keyword：背景高亮
-// - key sentence：只下划线“命中的句子片段”，不再整段
-// - 支持同一段多个 key sentences（按出现顺序逐段切分）
-// ⚠️ 已移除 condition3(search) 相关逻辑
-export function applyAnnotationsToRoot(
+/**
+ * Cond5 annotation：
+ * - 只做 keyword / keySentence（不含 search）
+ * - 不依赖 AnnoRangeNode
+ */
+export function applyAnnotationsToRootCond5(
   keyWords: string[] = [],
   keySentences: string[] = []
 ) {
   const root = $getRoot();
   const children = root.getChildren();
 
-  // 1) 收集段落
   const paragraphMap: Array<{ para: any; text: string }> = [];
   children.forEach((node) => {
     if (!$isParagraphNode(node)) return;
@@ -35,14 +34,11 @@ export function applyAnnotationsToRoot(
   const kws = (keyWords || []).map((s) => s.trim()).filter(Boolean);
   const ks = (keySentences || []).map((s) => s.trim()).filter(Boolean);
 
-  // keyword regex
   const kwRegex =
     kws.length > 0
       ? new RegExp(`(${kws.map(escapeRegExp).join("|")})`, "gi")
       : null;
 
-  // 把 segment 按关键词 split，并附加到段落里
-  // underline=true 表示关键句范围（下划线）
   const appendWithStyles = (p: any, segment: string, underline: boolean) => {
     if (segment == null || segment === "") return;
 
@@ -56,13 +52,13 @@ export function applyAnnotationsToRoot(
 
       const styles: string[] = [];
 
-      // 关键句下划线
+      // key sentence underline（如果你 cond5 不需要，可直接删掉这一段）
       if (underline) {
         styles.push("border-bottom: calc(1 / 1080 * 100vh) solid #222");
         styles.push("padding-bottom: calc(5 / 1080 * 100vh)");
       }
 
-      // 关键词高亮（注意：关键句里也允许高亮关键词）
+      // keyword highlight
       if (isKeyword) {
         styles.push("background: #e6e1db");
         styles.push("padding: calc(5 / 1080 * 100vh) calc(4 / 1080 * 100vw)");
@@ -74,7 +70,6 @@ export function applyAnnotationsToRoot(
     });
   };
 
-  // 多个关键句：按段落里出现顺序逐个处理
   const findAllMatchesInText = (text: string, needles: string[]) => {
     const matches: { start: number; end: number }[] = [];
 
@@ -89,23 +84,16 @@ export function applyAnnotationsToRoot(
       }
     }
 
-    // 排序：先 start，再长的优先
     matches.sort((a, b) => a.start - b.start || b.end - a.end);
 
-    // 去重/去重叠：保留不重叠区间
     const merged: { start: number; end: number }[] = [];
     for (const m of matches) {
       const last = merged[merged.length - 1];
-      if (!last) {
-        merged.push(m);
-        continue;
-      }
-      if (m.start >= last.end) merged.push(m);
+      if (!last || m.start >= last.end) merged.push(m);
     }
     return merged;
   };
 
-  // 2) 对每个段落重建内容
   paragraphMap.forEach(({ para, text }) => {
     para.clear();
 
@@ -115,16 +103,12 @@ export function applyAnnotationsToRoot(
     }
 
     const ranges = ks.length ? findAllMatchesInText(text, ks) : [];
-
-    // 没有关键句：整段只做 keyword 高亮
     if (ranges.length === 0) {
       appendWithStyles(para, text, false);
       return;
     }
 
     let cursor = 0;
-
-    // 按关键句范围切分渲染
     for (const range of ranges) {
       const before = text.slice(cursor, range.start);
       if (before) appendWithStyles(para, before, false);
@@ -144,7 +128,7 @@ export function applyAnnotationsToRoot(
   });
 }
 
-export default function AnnotationOnBlurPlugin({
+export default function AnnotationCond5OnBlurPlugin({
   keyWords = [],
   keySentences = [],
   enabled = true,
@@ -162,7 +146,7 @@ export default function AnnotationOnBlurPlugin({
       BLUR_COMMAND,
       () => {
         editor.update(() => {
-          applyAnnotationsToRoot(keyWords, keySentences);
+          applyAnnotationsToRootCond5(keyWords, keySentences);
         });
         return false;
       },

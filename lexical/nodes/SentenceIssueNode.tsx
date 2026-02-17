@@ -23,13 +23,16 @@ export type SerializedSentenceIssueNode = SerializedLexicalNode & {
 
 export class SentenceIssueNode extends DecoratorNode<JSX.Element> {
   __payload: SentenceIssuePayload;
+  __modified = false;
 
   static getType(): string {
     return "sentence-issue";
   }
 
   static clone(node: SentenceIssueNode): SentenceIssueNode {
-    return new SentenceIssueNode(node.__payload, node.__key);
+    const cloned = new SentenceIssueNode(node.__payload, node.__key);
+    cloned.__modified = node.__modified;
+    return cloned;
   }
 
   constructor(payload: SentenceIssuePayload, key?: NodeKey) {
@@ -39,6 +42,14 @@ export class SentenceIssueNode extends DecoratorNode<JSX.Element> {
 
   getPayload() {
     return this.__payload;
+  }
+
+  setModified(modified: boolean) {
+    this.__modified = modified;
+  }
+
+  isModified() {
+    return this.__modified;
   }
 
   exportJSON(): SerializedSentenceIssueNode {
@@ -56,10 +67,16 @@ export class SentenceIssueNode extends DecoratorNode<JSX.Element> {
   createDOM(_config: EditorConfig): HTMLElement {
     const span = document.createElement("span");
     span.className = "sentenceIssueWrap"; // 你自己写 css：下划线等
+    span.dataset.modified = "false";
     return span;
   }
 
-  updateDOM(): boolean {
+  updateDOM(_prevNode: unknown, dom: HTMLElement, _config: EditorConfig): boolean {
+    if (dom) {
+      const isModified = this.__modified;
+      dom.dataset.modified = isModified ? "true" : "false";
+      dom.style.opacity = isModified ? "0.4" : "1";
+    }
     return false;
   }
 
@@ -76,6 +93,8 @@ export class SentenceIssueNode extends DecoratorNode<JSX.Element> {
   }
 }
 
+
+
 export function $createSentenceIssueNode(payload: SentenceIssuePayload) {
   return new SentenceIssueNode(payload);
 }
@@ -83,3 +102,6 @@ export function $createSentenceIssueNode(payload: SentenceIssuePayload) {
 export function $isSentenceIssueNode(node: LexicalNode | null | undefined): node is SentenceIssueNode {
   return node instanceof SentenceIssueNode;
 }
+
+
+

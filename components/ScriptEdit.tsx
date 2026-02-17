@@ -6,6 +6,7 @@ import AlternativePop from './AlternativePop';
 import Spinner from './Spinner';
 import LexicalEditor from "../lexical/LexicalEditor";
 import LexicalEditorCond5 from '../lexical/LexicalEditorCond5';
+import LexicalEditorCond3 from '../lexical/LexicalEditorCond3';
 
 type ParagraphAnnotation = {
   keyWords: string[];       // 1-2
@@ -458,6 +459,10 @@ const Edit = (props: EditProps) => {
     }
   };
 
+  // condition2 annotation：走 Lexical 实现高亮和下划线（不直接操作 DOM）
+
+
+
   return (
     <div className="edit1BackGround">
       <div className='logo'>
@@ -585,7 +590,7 @@ const Edit = (props: EditProps) => {
                 }}
               />
             ) : props.showSearch ? (
-              <LexicalEditor
+              <LexicalEditorCond3
                 key={`search-${String(currentScene.id)}`}
                 value={editedText[currentSceneIndex] || []}
                 sceneKey={Number(currentScene.id)}

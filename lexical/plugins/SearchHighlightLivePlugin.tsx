@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import { applyAnnotationsToRoot } from "./AnnotationOnBlurPlugin";
+import { applyAnnotationsToRoot } from "./AnnotationCond3Plugin";
 
 export default function SearchHighlightLivePlugin({
   keyWords = [],

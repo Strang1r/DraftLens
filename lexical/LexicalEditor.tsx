@@ -6,6 +6,7 @@ import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import AnnotationOnBlurPlugin, { applyAnnotationsToRoot } from "./plugins/AnnotationOnBlurPlugin";
 import SearchHighlightLivePlugin from "./plugins/SearchHighlightLivePlugin";
+
 import {
   $createParagraphNode,
   $createTextNode,
@@ -191,6 +192,7 @@ export default function LexicalEditor({
 }: Props) {
   const initialConfig = {
     namespace: "DraftLensEditor",
+
     onError(error: Error) {
       console.error(error);
     },
