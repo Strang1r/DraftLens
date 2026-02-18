@@ -7,6 +7,12 @@ import Spinner from './Spinner';
 import LexicalEditor from "../lexical/LexicalEditor";
 import LexicalEditorCond5 from '../lexical/LexicalEditorCond5';
 import LexicalEditorCond3 from '../lexical/LexicalEditorCond3';
+import LexicalEditorCond6 from '../lexical/LexicalEditorCond6';
+import { type LexicalEditor as LexicalEditorInstance } from "lexical";
+import { $getSelection, $isRangeSelection } from "lexical";
+import { $getRoot, $isTextNode, $getNodeByKey, $createRangeSelection, $setSelection } from "lexical";
+import { $createTextNode } from "lexical";
+import Regenerate from './Regenerate';
 
 type ParagraphAnnotation = {
   keyWords: string[];       // 1-2
@@ -36,6 +42,7 @@ type EditProps = {
   showAnnotation?: boolean; // condition2 
   showSummary?: boolean; // condition4 
   showSuggestion?: boolean; // condition5 
+  showChatBot?: boolean; // condition6 
 };
 
 type AltScene = {
@@ -53,6 +60,16 @@ type SentenceIssue = {
   issue: string;
 };
 
+// condition6 
+type ChatMsg = {
+  id: string;
+  role: "user" | "ai";
+  text: string;
+  loading?: boolean;
+  replacement?: string | null;
+  applied?: boolean;
+};
+
 const Edit = (props: EditProps) => {
   const navigate = useNavigate();
   const { sceneId } = useParams();
@@ -66,7 +83,7 @@ const Edit = (props: EditProps) => {
   const scenes: Scene[] = draft?.scenes ?? [];
   const initialTitle = draft?.mainTitle ?? "HISTORY";
 
-  // ✅ 初始定位到点击的那个 scene
+  // 初始定位到点击的那个 scene
   const initialIndex = useMemo(() => {
     const idx = scenes.findIndex(s => String(s.id) === String(sceneId));
     return idx >= 0 ? idx : 0;
@@ -459,15 +476,347 @@ const Edit = (props: EditProps) => {
     }
   };
 
-  // condition2 annotation：走 Lexical 实现高亮和下划线（不直接操作 DOM）
+  // condition6
+  const [input, setInput] = useState('');
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [aiIsGenerating, setAiIsGenerating] = useState(false);
+  // 自动调整文本框高度
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const messagesRef = useRef<HTMLDivElement | null>(null);
 
+  // condition6 选中文本
+  const [selectedText, setSelectedText] = useState("")
+  const [editorInstance, setEditorInstance] = useState<LexicalEditorInstance | null>(null);
+  const selectedTextRef = useRef("");
+  useEffect(() => {
+    selectedTextRef.current = selectedText;
+  }, [selectedText]);
 
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+
+    const el = textareaRef.current;
+    if (!el) return;
+
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
+  function uid() {
+    return Math.random().toString(36).slice(2);
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = input.trim();
+    if (!text || aiIsGenerating) return;
+
+    const pinnedSelected = selectedTextRef.current.trim();
+
+    setAiIsGenerating(true);
+
+    const userMsg: ChatMsg = { id: uid(), role: "user", text };
+    const aiPlaceholderId = uid();
+    const aiMsg: ChatMsg = {
+      id: aiPlaceholderId,
+      role: "ai",
+      text: "",
+      loading: true,
+    };
+
+    setMessages(prev => [...prev, userMsg, aiMsg]);
+    setInput("");
+
+    // 清空 textarea 高度（否则会保持很高）
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+
+    try {
+      const res = await fetch("http://localhost:3001/api/script/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          selectedText: pinnedSelected,
+          userPrompt: text,
+          sceneText: editedText[currentSceneIndex],
+        }),
+      });
+
+      const data = await res.json();
+
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === aiPlaceholderId
+            ? {
+              ...m,
+              loading: false,
+              text: data.answer ?? "No response.",
+              replacement: data.replacement ?? null,
+            }
+            : m
+        )
+      );
+    } catch (err) {
+      console.error(err);
+
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === aiPlaceholderId
+            ? {
+              ...m,
+              loading: false,
+              text: "Ask AI for help with this sentence.",
+              replacement: null,
+            }
+            : m
+        )
+      );
+    } finally {
+      setAiIsGenerating(false);
+    }
+  };
+
+  // condition6 模拟 AI 响应
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages]);
+
+  // condition6 句子高亮不消失
+  const pinnedKeysRef = useRef<Set<string>>(new Set());
+  const clearPinnedHighlight = () => {
+    if (!editorInstance) return;
+
+    editorInstance.update(() => {
+      const keys = pinnedKeysRef.current;
+      if (keys.size === 0) return;
+
+      for (const key of keys) {
+        const n = $getNodeByKey(key);
+        if (n && $isTextNode(n)) n.setStyle("");
+      }
+      pinnedKeysRef.current = new Set();
+    });
+  };
+
+  /*   const pinCurrentSelection = () => {
+      if (!editorInstance) return;
+  
+      editorInstance.update(() => {
+        const selection = $getSelection();
+        if (!$isRangeSelection(selection) || selection.isCollapsed()) return;
+  
+        // 先清旧的 pinned
+        const oldKeys = pinnedKeysRef.current;
+        if (oldKeys.size > 0) {
+          const root = $getRoot();
+          for (const n of root.getAllTextNodes()) {
+            if (oldKeys.has(n.getKey())) n.setStyle("");
+          }
+          pinnedKeysRef.current = new Set();
+        }
+  
+        // ✅ 关键：先把选区边界所在的 TextNode 切开
+        const isBackward = selection.isBackward();
+        const startPoint = isBackward ? selection.focus : selection.anchor;
+        const endPoint = isBackward ? selection.anchor : selection.focus;
+  
+        const startNode = startPoint.getNode();
+        const endNode = endPoint.getNode();
+        const startOffset = startPoint.offset;
+        const endOffset = endPoint.offset;
+  
+        // 同一个 TextNode：直接 split 成三段，只高亮中间
+        if ($isTextNode(startNode) && startNode === endNode) {
+          const parts = startNode.splitText(startOffset, endOffset);
+          const middle = parts.length === 3 ? parts[1] : parts[0]; // 保险
+          middle.setStyle("background: #e6e1db;");
+          pinnedKeysRef.current = new Set([middle.getKey()]);
+          return;
+        }
+  
+        // 不同 TextNode：先 split end，再 split start（避免 offset 被破坏）
+        if ($isTextNode(endNode)) {
+          endNode.splitText(endOffset);
+        }
+        if ($isTextNode(startNode)) {
+          startNode.splitText(startOffset);
+        }
+  
+        // ✅ 现在 selection.getNodes() 就会包含“被切出来的选中文本节点”
+        const nodes = selection.getNodes();
+        const newKeys = new Set<string>();
+  
+        for (const node of nodes) {
+          if ($isTextNode(node)) {
+            node.setStyle("background: #e6e1db;");
+            newKeys.add(node.getKey());
+          }
+        }
+  
+        pinnedKeysRef.current = newKeys;
+      });
+    }; */
+
+  function getAbsOffsetFromDOMRange(paragraphEl: HTMLElement, range: Range) {
+    try {
+      // 先拿到“段落内容的 Range”
+      const base = document.createRange();
+      base.selectNodeContents(paragraphEl);
+
+      // startAbs = 段落开头 -> 选区 start 的文本长度
+      const rStart = base.cloneRange();
+      rStart.setEnd(range.startContainer, range.startOffset);
+      const startAbs = rStart.toString().length;
+
+      // endAbs = 段落开头 -> 选区 end 的文本长度
+      const rEnd = base.cloneRange();
+      rEnd.setEnd(range.endContainer, range.endOffset);
+      const endAbs = rEnd.toString().length;
+
+      // 验证并修正偏移值，防止超过文本长度
+      const textLen = paragraphEl.textContent?.length || 0;
+      const validStart = Math.max(0, Math.min(startAbs, textLen));
+      const validEnd = Math.max(0, Math.min(endAbs, textLen));
+
+      return {
+        startAbs: validStart,
+        endAbs: validEnd
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function normalizeParagraphTextNodesKeepText(paragraph: any) {
+    const merged = paragraph.getTextContent();
+    paragraph.clear();
+    const t = $createTextNode(merged);
+    paragraph.append(t);
+    return t; // 返回新的单一 TextNode
+  }
+
+  const pinCurrentSelectionFromRange = (domRange: Range | null) => {
+    if (!editorInstance || !domRange) return;
+
+    editorInstance.update(() => {
+      const selection = $getSelection();
+      if (!$isRangeSelection(selection) || selection.isCollapsed()) return;
+
+      const anchorNode = selection.anchor.getNode();
+      const paraNode = anchorNode.getParent();
+      if (!paraNode) return;
+
+      const rootEl = editorInstance.getRootElement();
+      if (!rootEl) return;
+
+      // 找段落 DOM
+      const pEl = domRange.commonAncestorContainer instanceof Element
+        ? domRange.commonAncestorContainer.closest("p")
+        : (domRange.commonAncestorContainer.parentElement?.closest("p") ?? null);
+
+      if (!pEl) return;
+
+      const offsets = getAbsOffsetFromDOMRange(pEl as HTMLElement, domRange);
+      if (!offsets) return;
+
+      let { startAbs, endAbs } = offsets;
+      if (startAbs > endAbs) [startAbs, endAbs] = [endAbs, startAbs];
+
+      // 清旧 pinned
+      for (const key of pinnedKeysRef.current) {
+        const n = $getNodeByKey(key);
+        if (n && $isTextNode(n)) n.setStyle("");
+      }
+      pinnedKeysRef.current = new Set();
+
+      // normalize（保留参考句子位置）
+      const single = normalizeParagraphTextNodesKeepText(paraNode);
+      if (!$isTextNode(single)) return;
+
+      const textContent = single.getTextContent();
+
+      // 确保 endAbs 不超过文本长度
+      const safeEndAbs = Math.min(endAbs, textContent.length);
+      const safeStartAbs = Math.min(startAbs, safeEndAbs);
+
+      if (safeStartAbs === safeEndAbs) return; // 防止空选区
+
+      // 设 selection
+      const rangeSel = $createRangeSelection();
+      rangeSel.setTextNodeRange(single, safeStartAbs, single, safeEndAbs);
+      $setSelection(rangeSel);
+
+      // 改进的 split 和高亮逻辑
+      const parts = single.splitText(safeStartAbs, safeEndAbs);
+
+      // 根据 parts.length 正确选择要高亮的部分
+      let middlePart = null;
+      if (parts.length === 3) {
+        // [0..start), [start..end), [end..length)
+        middlePart = parts[1];
+      } else if (parts.length === 2) {
+        // 可能是 [start..end), [end..length) 或 [0..start), [start..length)
+        if (safeStartAbs === 0) {
+          // [0..end), [end..length)
+          middlePart = parts[0];
+        } else {
+          // [0..start), [start..length)
+          middlePart = parts[1];
+        }
+      } else if (parts.length >= 1) {
+        // 只有一个部分，应该不太可能，但保险起见
+        middlePart = parts[0];
+      }
+
+      if (middlePart && $isTextNode(middlePart)) {
+        middlePart.setStyle("background:#e6e1db; padding: calc(6.5 / 1080 * 100vh) 0;");
+        pinnedKeysRef.current = new Set([middlePart.getKey()]);
+      }
+
+      const pinnedString = domRange.toString().replace(/\s+/g, " ").trim();
+      selectedTextRef.current = pinnedString;
+      setSelectedText(pinnedString);
+    });
+  };
+
+  const applySuggestionToPinned = (newText: string) => {
+    if (!editorInstance) return;
+
+    editorInstance.update(() => {
+      const keys = pinnedKeysRef.current;
+      if (!keys || keys.size === 0) return;
+
+      const root = $getRoot();
+      const nodes = root.getAllTextNodes().filter(n => keys.has(n.getKey()));
+      if (nodes.length === 0) return;
+
+      // 第一个 node 放新文本，其余 node 清空
+      const first = nodes[0];
+      first.setTextContent(newText);
+      first.setStyle(""); // 可选：apply 后取消高亮
+
+      for (let i = 1; i < nodes.length; i++) {
+        nodes[i].setTextContent("");
+        nodes[i].setStyle("");
+      }
+
+      // 清空 pinned keys
+      pinnedKeysRef.current = new Set();
+    });
+
+    // 可选：UI 也清空 selectedText
+    setSelectedText("");
+  };
 
   return (
-    <div className="edit1BackGround">
+    <div className={`edit1BackGround ${props.showChatBot ? "withChatBot" : ""}`}>
       <div className='logo'>
         <img src={logoSvg} alt="" />
       </div>
+      <Regenerate />
       <div className='paper'>
         <div className='imgArea'>
           <div className='sceneOptions'>
@@ -625,6 +974,34 @@ const Edit = (props: EditProps) => {
                 issues={issuesForThisScene}
                 onSelectIssue={(id) => setActiveIssueId(id)}
               />
+            ) : props.showChatBot ? (
+              <LexicalEditorCond6
+                key={`chatbot-${String(currentScene.id)}`}
+                value={editedText[currentSceneIndex] || []}
+                sceneKey={Number(currentScene.id)}
+                onSelectionChange={(text) => {
+                  // 把选中的文本给右侧 chatBot 用
+                  setSelectedText(text);
+
+                }}
+                onSelectionFinal={(range) => pinCurrentSelectionFromRange(range)}// ✅ 松手后把“选区”变成持久高亮
+                onEditorReady={setEditorInstance}
+                onBlurCommit={(lines) => {
+                  setEditedText((prev) => {
+                    const prevLines = prev[currentSceneIndex] || [];
+                    const same =
+                      prevLines.length === lines.length &&
+                      prevLines.every((v, i) => v === lines[i]);
+
+                    if (same) return prev; // 不更新，不触发 SyncValuePlugin 重刷
+
+                    const copy = prev.map((arr) => [...arr]);
+                    copy[currentSceneIndex] = lines;
+                    saveDraftToStorage(editedMainTitle, editedSubTitle, copy, editedImg);
+                    return copy;
+                  });
+                }}
+              />
             ) : (
               <div
                 className="scriptText"
@@ -682,6 +1059,75 @@ const Edit = (props: EditProps) => {
         </div>
         <div className="divider" />
       </div>
+      {/* ChatBot */}
+      {
+        props.showChatBot && (
+          <div className="chatBot">
+            <div className='messages' ref={messagesRef}>
+              {messages.map(m => {
+                if (m.role === "user") {
+                  return (
+                    <div className="userPrompt" key={m.id}>
+                      <p>{m.text}</p>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="AIInterface" key={m.id}>
+                    <div className='AIResponse'>
+                      {m.loading ? <Spinner /> : null}
+                      <p>
+                        {m.replacement ? m.replacement : m.text}
+                      </p>
+                    </div>
+                    {m.role === "ai" && !m.loading && m.replacement && (
+                      <div
+                        className="applyBtn"
+                        onClick={() => {
+                          const rep = m.replacement!;
+                          applySuggestionToPinned(rep);
+
+                          setMessages(prev =>
+                            prev.map(x =>
+                              x.id === m.id
+                                ? {
+                                  ...x,
+                                  text: rep,              // 把 replacement 固化成 AI 回复显示文本
+                                  applied: true,
+                                  replacement: null,      // 清掉 replacement，让按钮消失
+                                }
+                                : x
+                            )
+                          );
+                        }}
+                      >
+                        <h5>Apply</h5>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <form className='promptInput' onSubmit={handleSubmit}>
+              <textarea
+                value={input}
+                ref={textareaRef}
+                onChange={handleChange}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (isGenerating) return;
+                    handleSubmit(e as unknown as React.FormEvent);
+                  }
+                }}
+                placeholder="Ask AI for suggestions..."
+              />
+              <button className='submitButton' type="submit" disabled={aiIsGenerating}>
+              </button>
+            </form>
+          </div>
+        )
+      }
       {/* 确认弹框 */}
       {showConfirm && (
         <div

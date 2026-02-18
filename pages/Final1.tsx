@@ -4,6 +4,7 @@ import titleDecPng from '../assets/titleDec.png'
 import SceneModel from '../components/SceneModel'
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import Regenerate from '../components/Regenerate';
 
 
 type DraftScene = {
@@ -67,7 +68,7 @@ const Final1 = () => {
       if (!el) return;
 
       // 计算元素相对容器的位置
-      const OFFSET = 120; // 给标题留空间（你可调 60~120）
+      const OFFSET = 130; // 给标题留空间（你可调 60~120）
       const elTop = el.offsetTop; // 相对 offsetParent（这里通常就是 textArea 内）
       container.scrollTo({
         top: Math.max(0, elTop - OFFSET),
@@ -103,8 +104,7 @@ const Final1 = () => {
           ))}
         </div>
       </div>
-      <div className="export" >
-      </div>
+      <Regenerate />
     </div>
   )
 }

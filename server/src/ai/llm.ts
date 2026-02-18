@@ -75,6 +75,13 @@ export const SentenceIssuesSchema = z.object({
 
 export type SentenceIssues = z.infer<typeof SentenceIssuesSchema>;
 
+// condition6 chatbot
+export type ChatRewriteResponse = {
+  type: "rewrite" | "advice" | "clarify" | "refuse";
+  answer: string;          // 给用户看的文本（精简）
+  replacement: string | null; // 可替换文本
+};
+
 const IssueSuggestionSchema = z.object({
   suggestion: z.string().min(1),
 });
@@ -569,4 +576,87 @@ Now output a new suggestion as JSON:
   }
 
   return out;
+}
+
+export async function generateChatReplyFromLLM(args: {
+  selectedText: string;   // 用户选中的句子
+  userPrompt: string;     // 用户输入的问题
+  sceneText: string[];    // 当前 scene 全文（用于限制上下文）
+}): Promise<ChatRewriteResponse> {
+  const systemPrompt = `
+You are an AI writing assistant working inside a script editor.
+
+GOAL:
+Help the user understand and improve the CURRENT script.
+
+SCOPE (allowed):
+- Answer questions about the script content and the selected text.
+- You MAY use brief general knowledge to explain terms/entities mentioned in the script (e.g., places, people, events),
+  as long as it helps the user work on the script.
+- You MAY ask one short clarification question if the user’s request is ambiguous.
+
+STRICT RULES:
+1) Do NOT answer topics unrelated to the current script OR selected text.
+2) If the user’s question can reasonably refer to the selected text or the scene text, treat it as RELATED (do not refuse).
+   Example: selected "Europe" + user asks "where is it?" => RELATED.
+3. Keep responses concise (max 3-5 sentences).
+4. If the user is clearly asking to rewrite/rephrase/improve the selected text,
+   return type = "rewrite" and provide a clean replacement sentence.
+5) If the user asks for explanation/meaning/facts/background/feedback, return type="advice" and replacement=null.
+6) If the user request is ambiguous (e.g., "where is it?" but no clear referent), return type="clarify"
+   with one short question, replacement=null.
+7. Always return STRICT JSON only. No markdown. No extra text.
+
+JSON format:
+{
+  "type": "rewrite" | "advice" | "clarify" | "refuse",
+  "answer": string,
+  "replacement": string | null
+}
+
+If type is not "rewrite", replacement MUST be null.
+If type is "rewrite", replacement MUST be a single clean sentence.
+`.trim();
+
+  const userPromptFormatted = `
+Full scene:
+${args.sceneText.join("\n")}
+
+Selected text:
+"${args.selectedText}"
+
+User request:
+"${args.userPrompt}"
+`.trim();
+
+  const response = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.4, // 稍微稳定一点
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPromptFormatted },
+    ],
+  });
+
+  const raw = response.choices[0]?.message?.content ?? "";
+
+  try {
+    const parsed = JSON.parse(raw);
+
+    return {
+      type: parsed.type,
+      answer: String(parsed.answer ?? "").trim(),
+      replacement:
+        parsed.type === "rewrite"
+          ? String(parsed.replacement ?? "").trim()
+          : null,
+    };
+  } catch (err) {
+    // 万一模型没按 JSON 输出，兜底
+    return {
+      type: "advice",
+      answer: raw.trim(),
+      replacement: null,
+    };
+  }
 }

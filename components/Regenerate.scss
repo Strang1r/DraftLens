@@ -1,0 +1,34 @@
+  .regeneratePrompt {
+    position: absolute;
+    right: calc(70 / 1920 * 100vw);
+    top: calc(36 / 1080 * 100vh);
+    cursor: pointer;
+    padding: calc(8 / 1080 * 100vh) calc(18 / 1920 * 100vw);
+    border-radius: calc(2 / 1080 * 100vh);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: calc(12 / 1920 * 100vw);
+    font-size: calc(16 / 1080 * 100vh);
+    color: #776353;
+    opacity: 0.66;
+    transition: all 0.4s ease;
+
+    &::before {
+      font-family: 'iconfont';
+      content: '\e61b';
+      font-size: calc(18 / 1080 * 100vh);
+      color: #776353;
+    }
+
+    &:hover {
+      opacity: 1;
+      color: #4e443c;
+      background-color: #f5f2ed;
+    }
+
+    &:hover::before {
+      color: #4e443c;
+    }
+
+  }

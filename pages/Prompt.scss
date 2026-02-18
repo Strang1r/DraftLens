@@ -144,6 +144,7 @@
       align-items: center;
       gap: calc(14 / 1920 * 100vw);
       margin-top: calc(60 / 1080 * 100vh);
+      max-width: calc(600 / 1920 * 100vw);
 
       p {
         color: #444;

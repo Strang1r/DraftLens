@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { generateDraftFromLLM, generateSceneImageBase64, generateSceneAlternativesFromLLM, generateWhyHereFromLLM, generateSceneRationaleFromLLM, generateSentenceIssuesFromLLM, generateIssueSuggestionFromLLM } from "../ai/llm";
+import { generateDraftFromLLM, generateSceneImageBase64, generateSceneAlternativesFromLLM, generateWhyHereFromLLM, generateSceneRationaleFromLLM, generateSentenceIssuesFromLLM, generateIssueSuggestionFromLLM, generateChatReplyFromLLM } from "../ai/llm";
 import { withTimeout } from "../ai/llm";
 import { generateAnnotationsFromLLM } from "../ai/llm";
 
@@ -315,5 +315,97 @@ router.post("/issue-suggestion", async (req, res) => {
   }
 });
 
+router.post("/chat", async (req, res) => {
+  try {
+    const { selectedText, userPrompt, sceneText } = req.body ?? {};
+
+    // 基础校验（防止 undefined）
+    const safeSelectedText = String(selectedText ?? "").trim();
+    const safeUserPrompt = String(userPrompt ?? "").trim();
+    const safeSceneText = Array.isArray(sceneText)
+      ? sceneText.map((t) => String(t ?? ""))
+      : [];
+
+    // 如果没有选中文本，不允许改写
+    if (!safeSelectedText) {
+      return res.status(400).json({
+        type: "refuse",
+        answer: "Please select a sentence before asking for revision.",
+        replacement: null,
+      });
+    }
+
+    // 如果用户没输入内容
+    if (!safeUserPrompt) {
+      return res.status(400).json({
+        type: "refuse",
+        answer: "Please enter your request.",
+        replacement: null,
+      });
+    }
+
+    // 如果选中的文本不在当前 scene 里（安全限制）
+    const sceneJoined = safeSceneText.join(" ");
+    if (!sceneJoined.includes(safeSelectedText)) {
+      return res.status(400).json({
+        type: "refuse",
+        answer: "The selected text does not match the current script.",
+        replacement: null,
+      });
+    }
+
+    // 统一一些判定工具
+    const promptLower = safeUserPrompt.toLowerCase();
+
+    // 1) 超短/确认类输入：永远不触发改写（解决 “1” 也改写）
+    const isTiny = safeUserPrompt.length <= 2;
+    const isConfirmLike = /^(1|ok|okay|yes|yep|sure|thanks|thank you|cool|got it|done)$/i.test(
+      safeUserPrompt
+    );
+    if (isTiny || isConfirmLike) {
+      return res.json({
+        type: "qa",
+        answer: "If you want a rewrite, tell me how (e.g., “make it shorter” / “more formal”).",
+        replacement: null,
+      });
+    }
+
+    // 2) 判断是不是“改写意图”
+    //    - 包含 rewrite/rephrase 等关键词
+    //    - 或包含 “make it + tone/shorter/clearer …”
+    const rewriteKw = /\b(rewrite|rephrase|paraphrase|improve|polish|edit|revise|shorten|simplify|clarify|make it|make this|change this|fix)\b/i;
+    const toneKw = /\b(formal|informal|professional|casual|friendly|confident|neutral|academic|persuasive|tone|voice)\b/i;
+
+    const wantsRewrite =
+      rewriteKw.test(promptLower) ||
+      (/make (it|this)/i.test(promptLower) && (toneKw.test(promptLower) || /\bshorter|clearer|tighter\b/i.test(promptLower)));
+
+    // 3) 如果是改写：必须选中文本
+    if (wantsRewrite && !safeSelectedText) {
+      return res.status(400).json({
+        type: "refuse",
+        answer: "Please select a sentence before asking for revision.",
+        replacement: null,
+      });
+    }
+
+    // 调用 LLM
+    const result = await generateChatReplyFromLLM({
+      selectedText: safeSelectedText,
+      userPrompt: safeUserPrompt,
+      sceneText: safeSceneText,
+    });
+
+    return res.json(result);
+  } catch (error: any) {
+    console.error("Chat route error:", error);
+
+    return res.status(500).json({
+      type: "refuse",
+      answer: "The AI assistant is temporarily unavailable.",
+      replacement: null,
+    });
+  }
+});
 
 export default router;
