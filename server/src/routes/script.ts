@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { generateDraftFromLLM, generateSceneImageBase64, generateSceneAlternativesFromLLM, generateWhyHereFromLLM, generateSceneRationaleFromLLM, generateSentenceIssuesFromLLM, generateIssueSuggestionFromLLM, generateChatReplyFromLLM } from "../ai/llm";
+import { generateDraftFromLLM, generateSceneImageBase64, generateSceneAlternativesFromLLM, generateWhyHereFromLLM, generateSceneRationaleFromLLM, generateSentenceIssuesFromLLM, generateIssueSuggestionFromLLM, generateChatReplyFromLLM, generateChatReplyFromLLM2 } from "../ai/llm";
 import { withTimeout } from "../ai/llm";
 import { generateAnnotationsFromLLM } from "../ai/llm";
 
@@ -404,6 +404,53 @@ router.post("/chat", async (req, res) => {
       type: "refuse",
       answer: "The AI assistant is temporarily unavailable.",
       replacement: null,
+    });
+  }
+});
+
+router.post("/chat2", async (req, res) => {
+  try {
+    const { userPrompt, sceneText } = req.body ?? {};
+
+    // 基础校验
+    const safeUserPrompt = String(userPrompt ?? "").trim();
+    const safeSceneText = Array.isArray(sceneText)
+      ? sceneText.map((t) => String(t ?? ""))
+      : [];
+
+    // 用户没输入内容
+    if (!safeUserPrompt) {
+      return res.status(400).json({
+        answer: "Please enter your request.",
+      });
+    }
+
+    // 可选：超短/确认类输入的快速提示（不想要可删）
+    /* const isTiny = safeUserPrompt.length <= 2;
+    const isConfirmLike =
+      /^(1|ok|okay|yes|yep|sure|thanks|thank you|cool|got it|done)$/i.test(
+        safeUserPrompt
+      );
+
+    if (isTiny || isConfirmLike) {
+      return res.json({
+        answer:
+          "Tell me what you’d like help with (e.g., clarity, tone, structure, examples).",
+      });
+    } */
+
+    // 调用 LLM（纯聊天）
+    const result = await generateChatReplyFromLLM2({
+      userPrompt: safeUserPrompt,
+      sceneText: safeSceneText, // 不想给上下文就可以不传
+    });
+
+    return res.json(result); // { answer }
+  } catch (error: any) {
+    console.error("Chat route error:", error);
+
+    return res.status(500).json({
+      answer: "The AI assistant is temporarily unavailable.",
     });
   }
 });

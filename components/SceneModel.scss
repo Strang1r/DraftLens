@@ -35,10 +35,10 @@
             }
 
             .editButton {
+              width: fit-content;
               box-sizing: border-box;
-              height: calc(43 / 1080 * 100vh);
-              width: calc(110 / 1920 * 100vw);
               margin-top: calc(24 / 1080 * 100vh);
+              padding: calc(8 / 1080 * 100vh) calc(24 / 1920 * 100vw);
               display: flex;
               justify-content: center;
               align-items: center;

@@ -6,6 +6,7 @@ type AlternativePopProps = {
   img: string;
   text: string[];
   onReplaceText: () => void;
+  onReplaceImage: () => void;
   onReplaceAll: () => void;
 }
 
@@ -32,7 +33,8 @@ const AlternativePop = (props: AlternativePopProps) => {
         className='selectBtn'
       >
         <div className='replaceText' onClick={props.onReplaceText}>Replace Text</div>
-        <div className='replaceAll' onClick={props.onReplaceAll}>Replace Text+Image</div>
+        <div className='replaceImage' onClick={props.onReplaceImage}>Replace Image</div>
+        <div className='replaceAll' onClick={props.onReplaceAll}>Replace All</div>
       </div>
 
     </div>

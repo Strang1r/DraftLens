@@ -4,7 +4,7 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      padding: calc(50 / 1080 * 100vh) calc(86 / 1920 * 100vw) 0 calc(86 / 1920 * 100vw);
+      padding: calc(50 / 1080 * 100vh) calc(70 / 1920 * 100vw) 0 calc(70 / 1920 * 100vw);
 
 
       .mainTitle {
@@ -36,7 +36,7 @@
       }
 
       .script {
-        padding-bottom: calc(140 / 1080 * 100vh);
+        padding-bottom: calc(120 / 1080 * 100vh);
         max-height: 100%;
         overflow-y: auto;
 
@@ -73,25 +73,43 @@
 
       .selectBtn {
         position: absolute;
-        bottom: calc(50 / 1080 * 100vh);
+        bottom: calc(36 / 1080 * 100vh);
         left: 50%;
         transform: translateX(-50%);
-        width: 76.5%;
+        width: 80.5%;
         display: flex;
         justify-content: center;
         align-items: center;
-        gap: calc(20 / 1920 * 100vw);
-
-        .replaceText {
-          flex: 0 0 30%;
-        }
+        gap: calc(14 / 1920 * 100vw);
 
         .replaceAll {
           flex: 1;
         }
 
         .replaceText,
+        .replaceImage {
+          padding: 0 calc(12 / 1920 * 100vw);
+        }
+
         .replaceAll {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: calc(50 / 1080 * 100vh);
+          background-color: #776353;
+          border-radius: calc(2 / 1080 * 100vh);
+          font-size: calc(17 / 1080 * 100vh);
+          color: #fffdfb;
+          cursor: pointer;
+          transition: all 0.4s ease;
+
+          &:hover {
+            background-color: #675648;
+          }
+        }
+
+        .replaceText,
+        .replaceImage {
           display: flex;
           justify-content: center;
           align-items: center;

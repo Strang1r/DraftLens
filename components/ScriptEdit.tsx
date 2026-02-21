@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import logoSvg from '../src/assets/logo.svg'
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import './ScriptEdit.scss'
 import AlternativePop from './AlternativePop';
 import Spinner from './Spinner';
@@ -72,6 +72,7 @@ type ChatMsg = {
 
 const Edit = (props: EditProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { sceneId } = useParams();
 
   // 统一从 draft 读
@@ -229,6 +230,21 @@ const Edit = (props: EditProps) => {
     setShowAlternativeState(false);
   };
 
+  // 替换“当前scene”的图片
+  const handleReplaceImage = (alt: { img: string }) => {
+    const nextSub = [...editedSubTitle]; // 不改subtitle也行（那就不赋值）
+    const nextText = editedText.map(arr => [...arr]);
+    const nextImg = [...editedImg];
+
+    nextImg[currentSceneIndex] = alt.img;
+
+    setEditedText(nextText);
+    setEditedImg(nextImg);
+
+    saveDraftToStorage(editedMainTitle, nextSub, nextText, nextImg);
+    setShowAlternativeState(false);
+  };
+
   // condition1 替换“当前scene”的文本 + 图片
   const handleReplaceAll = (alt: { text: string[]; img: string }) => {
     const nextSub = [...editedSubTitle];
@@ -312,38 +328,86 @@ const Edit = (props: EditProps) => {
     }
   };
 
+  const prevSceneIdRef = useRef<number | string | null>(null);
   useEffect(() => {
-    setAlternativeScene([]);
-  }, [currentSceneIndex]);
+    const currentId = currentScene?.id ?? null;
+    if (prevSceneIdRef.current === null) {
+      prevSceneIdRef.current = currentId;
+      return;
+    }
+    if (prevSceneIdRef.current !== currentId) {
+      setAlternativeScene([]);
+      prevSceneIdRef.current = currentId;
+    }
+  }, [currentScene]);
 
   // 当前subtitle
   const currentSubTitle = editedSubTitle[currentSceneIndex];
 
   // 打开替换选项：先从缓存拿，有就用；没有就调接口，拿到后顺便存缓存
   const altCacheRef = useRef<Record<string, AltScene[]>>({});
+  const ALT_CACHE_KEY = "alternativesByScene";
+
+  const readAltCache = (): Record<string, AltScene[]> => {
+    try {
+      const raw = sessionStorage.getItem(ALT_CACHE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  };
+
+  const writeAltCache = (next: Record<string, AltScene[]>) => {
+    try {
+      sessionStorage.setItem(ALT_CACHE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const updateAltCache = (key: string, alts: AltScene[]) => {
+    altCacheRef.current[key] = alts;
+    const existing = readAltCache();
+    existing[key] = alts;
+    writeAltCache(existing);
+  };
+
   const openAlternative = () => {
     setShowAlternativeState(true);
 
     const key = String(currentScene.id);
-    const cached = altCacheRef.current[key];
+    const cached = altCacheRef.current[key] ?? readAltCache()[key];
 
     if (cached?.length) {
+      altCacheRef.current[key] = cached;
       setAlternativeScene(cached);
       setAltLoading(false);
       return;
     }
 
     fetchAlternatives().then((alts) => {
-      if (alts?.length) altCacheRef.current[key] = alts;
+      if (alts?.length) updateAltCache(key, alts);
     });
   };
+
+  const autoOpenAltRef = useRef(false);
+  useEffect(() => {
+    if (!props.showAlternative) return;
+    if (autoOpenAltRef.current) return;
+    const state = location.state as { openAlternative?: boolean } | null;
+    if (!state?.openAlternative) return;
+    if (!currentScene) return;
+
+    autoOpenAltRef.current = true;
+    openAlternative();
+  }, [currentScene, location.state, props.showAlternative]);
 
   // 重新生成替换选项：直接调接口，拿到后更新缓存
   const regenerateAlternatives = () => {
     if (altLoading) return;
     const key = String(currentScene.id);
     fetchAlternatives().then((alts) => {
-      if (alts?.length) altCacheRef.current[key] = alts; // 覆盖缓存
+      if (alts?.length) updateAltCache(key, alts); // 覆盖缓存
     });
   };
 
@@ -511,7 +575,7 @@ const Edit = (props: EditProps) => {
     const text = input.trim();
     if (!text || aiIsGenerating) return;
 
-    const pinnedSelected = selectedTextRef.current.trim();
+    //const pinnedSelected = selectedTextRef.current.trim();
 
     setAiIsGenerating(true);
 
@@ -533,11 +597,11 @@ const Edit = (props: EditProps) => {
     }
 
     try {
-      const res = await fetch("http://localhost:3001/api/script/chat", {
+      const res = await fetch("http://localhost:3001/api/script/chat2", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          selectedText: pinnedSelected,
+          //selectedText: pinnedSelected,
           userPrompt: text,
           sceneText: editedText[currentSceneIndex],
         }),
@@ -552,7 +616,7 @@ const Edit = (props: EditProps) => {
               ...m,
               loading: false,
               text: data.answer ?? "No response.",
-              replacement: data.replacement ?? null,
+              //replacement: data.replacement ?? null,
             }
             : m
         )
@@ -566,8 +630,8 @@ const Edit = (props: EditProps) => {
             ? {
               ...m,
               loading: false,
-              text: "Ask AI for help with this sentence.",
-              replacement: null,
+              text: "Ask AI for help with this scene.",
+              //replacement: null,
             }
             : m
         )
@@ -600,65 +664,6 @@ const Edit = (props: EditProps) => {
       pinnedKeysRef.current = new Set();
     });
   };
-
-  /*   const pinCurrentSelection = () => {
-      if (!editorInstance) return;
-  
-      editorInstance.update(() => {
-        const selection = $getSelection();
-        if (!$isRangeSelection(selection) || selection.isCollapsed()) return;
-  
-        // 先清旧的 pinned
-        const oldKeys = pinnedKeysRef.current;
-        if (oldKeys.size > 0) {
-          const root = $getRoot();
-          for (const n of root.getAllTextNodes()) {
-            if (oldKeys.has(n.getKey())) n.setStyle("");
-          }
-          pinnedKeysRef.current = new Set();
-        }
-  
-        // ✅ 关键：先把选区边界所在的 TextNode 切开
-        const isBackward = selection.isBackward();
-        const startPoint = isBackward ? selection.focus : selection.anchor;
-        const endPoint = isBackward ? selection.anchor : selection.focus;
-  
-        const startNode = startPoint.getNode();
-        const endNode = endPoint.getNode();
-        const startOffset = startPoint.offset;
-        const endOffset = endPoint.offset;
-  
-        // 同一个 TextNode：直接 split 成三段，只高亮中间
-        if ($isTextNode(startNode) && startNode === endNode) {
-          const parts = startNode.splitText(startOffset, endOffset);
-          const middle = parts.length === 3 ? parts[1] : parts[0]; // 保险
-          middle.setStyle("background: #e6e1db;");
-          pinnedKeysRef.current = new Set([middle.getKey()]);
-          return;
-        }
-  
-        // 不同 TextNode：先 split end，再 split start（避免 offset 被破坏）
-        if ($isTextNode(endNode)) {
-          endNode.splitText(endOffset);
-        }
-        if ($isTextNode(startNode)) {
-          startNode.splitText(startOffset);
-        }
-  
-        // ✅ 现在 selection.getNodes() 就会包含“被切出来的选中文本节点”
-        const nodes = selection.getNodes();
-        const newKeys = new Set<string>();
-  
-        for (const node of nodes) {
-          if ($isTextNode(node)) {
-            node.setStyle("background: #e6e1db;");
-            newKeys.add(node.getKey());
-          }
-        }
-  
-        pinnedKeysRef.current = newKeys;
-      });
-    }; */
 
   function getAbsOffsetFromDOMRange(paragraphEl: HTMLElement, range: Range) {
     try {
@@ -850,6 +855,7 @@ const Edit = (props: EditProps) => {
             >
               {editedSubTitle[currentSceneIndex]}
             </h4>
+            <p className='tip'>Click text to edit</p>
           </div>
           {/* condition2 annotation */}
           {props.showAnnotation && (
@@ -866,7 +872,7 @@ const Edit = (props: EditProps) => {
               <input
                 ref={searchInputRef}
                 type="text"
-                placeholder="Search in script..."
+                placeholder="Search for why here..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={
@@ -975,7 +981,27 @@ const Edit = (props: EditProps) => {
                 onSelectIssue={(id) => setActiveIssueId(id)}
               />
             ) : props.showChatBot ? (
-              <LexicalEditorCond6
+              <div
+                className="scriptText"
+                key={currentSceneIndex}
+                contentEditable
+                suppressContentEditableWarning
+                ref={scriptRef}
+                onBlur={(e) => {
+                  const raw = (e.currentTarget.innerText || "").replace(/\r/g, "");
+                  let lines = raw.split("\n");
+                  while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+
+                  setEditedText(prev => {
+                    const copy = prev.map(arr => [...arr]);
+                    copy[currentSceneIndex] = lines;
+                    saveDraftToStorage(editedMainTitle, editedSubTitle, copy, editedImg);
+                    return copy;
+                  });
+                }}
+              />
+            )
+              /* <LexicalEditorCond6
                 key={`chatbot-${String(currentScene.id)}`}
                 value={editedText[currentSceneIndex] || []}
                 sceneKey={Number(currentScene.id)}
@@ -1001,46 +1027,55 @@ const Edit = (props: EditProps) => {
                     return copy;
                   });
                 }}
-              />
-            ) : (
-              <div
-                className="scriptText"
-                key={currentSceneIndex}
-                contentEditable
-                suppressContentEditableWarning
-                ref={scriptRef}
-                onBlur={(e) => {
-                  const raw = (e.currentTarget.innerText || "").replace(/\r/g, "");
-                  let lines = raw.split("\n");
-                  while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+              /> */
+              : (
+                <div
+                  className="scriptText"
+                  key={currentSceneIndex}
+                  contentEditable
+                  suppressContentEditableWarning
+                  ref={scriptRef}
+                  onBlur={(e) => {
+                    const raw = (e.currentTarget.innerText || "").replace(/\r/g, "");
+                    let lines = raw.split("\n");
+                    while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
 
-                  setEditedText(prev => {
-                    const copy = prev.map(arr => [...arr]);
-                    copy[currentSceneIndex] = lines;
-                    saveDraftToStorage(editedMainTitle, editedSubTitle, copy, editedImg);
-                    return copy;
-                  });
-                }}
-              />
-            )}
+                    setEditedText(prev => {
+                      const copy = prev.map(arr => [...arr]);
+                      copy[currentSceneIndex] = lines;
+                      saveDraftToStorage(editedMainTitle, editedSubTitle, copy, editedImg);
+                      return copy;
+                    });
+                  }}
+                />
+              )}
           </div>
           <div className='btnArea'>
-            <div
-              className={`preBtn ${isFirst ? "invalideBtn" : ""}`}
-              onClick={() => {
-                goPrev();
-                setActiveIssueId(null);
-              }}
-            >
+            <div className='pre'>
+              <div
+                className={`preBtn ${isFirst ? "invalideBtn" : ""}`}
+                onClick={() => {
+                  goPrev();
+                  setActiveIssueId(null);
+                }}
+              >
+              </div>
+              <p className={isFirst ? "invalide" : ""}>Prev</p>
+              <p className={isFirst ? "invalide" : ""}>Scene</p>
             </div>
-            <div
-              className='nextBtn'
-              onClick={() => {
-                goNext();
-                setActiveIssueId(null);
-              }}
-            >
+            <div className='next'>
+              <div
+                className={`nextBtn ${isLast ? "invalideBtn" : ""}`}
+                onClick={() => {
+                  goNext();
+                  setActiveIssueId(null);
+                }}
+              >
+              </div>
+              <p className={isLast ? "invalide" : ""}>Next</p>
+              <p className={isLast ? "invalide" : ""}>Scene</p>
             </div>
+
           </div>
           {/* storyBoard */}
           <div className='storyBoard' onClick={() =>
@@ -1077,10 +1112,11 @@ const Edit = (props: EditProps) => {
                     <div className='AIResponse'>
                       {m.loading ? <Spinner /> : null}
                       <p>
-                        {m.replacement ? m.replacement : m.text}
+                        {m.text}
                       </p>
                     </div>
-                    {m.role === "ai" && !m.loading && m.replacement && (
+                    {/* apply */}
+                    {/* {m.role === "ai" && !m.loading && m.replacement && (
                       <div
                         className="applyBtn"
                         onClick={() => {
@@ -1103,7 +1139,7 @@ const Edit = (props: EditProps) => {
                       >
                         <h5>Apply</h5>
                       </div>
-                    )}
+                    )} */}
                   </div>
                 );
               })}
@@ -1120,7 +1156,7 @@ const Edit = (props: EditProps) => {
                     handleSubmit(e as unknown as React.FormEvent);
                   }
                 }}
-                placeholder="Ask AI for suggestions..."
+                placeholder="Ask for how to improve this scene."
               />
               <button className='submitButton' type="submit" disabled={aiIsGenerating}>
               </button>
@@ -1129,7 +1165,7 @@ const Edit = (props: EditProps) => {
         )
       }
       {/* 确认弹框 */}
-      {showConfirm && (
+      {/* {showConfirm && (
         <div
           className={`overlay ${modalOpenClass ? "open" : ""}`}
           onClick={() => setShowConfirm(false)} // 点击遮罩关闭
@@ -1179,7 +1215,7 @@ const Edit = (props: EditProps) => {
             </div>
           </div>
         </div>
-      )}
+      )}  */}
       {/* Why here */}
       {props.showWhyHere && showWhyHereState && (
         <div className="whyHere">
@@ -1203,7 +1239,6 @@ const Edit = (props: EditProps) => {
       {showAlternativeState && (
         <div className={`alternativeOverlay ${modalOpenClass ? "open" : ""}`} onClick={() => setShowAlternativeState(false)}>
           {/* regenerate */}
-
           <div
             className='regenBtn'
             onClick={(e) => {
@@ -1213,8 +1248,15 @@ const Edit = (props: EditProps) => {
           >
             <h5>Regenerate</h5>
           </div>
-
+          {
+            !altLoading && (
+              <div className='closeButton' onClick={() => setShowAlternativeState(false)}>
+              </div>
+            )
+          }
           <div className='paper' onClick={(e) => e.stopPropagation()}>
+
+
             {altLoading ? (
               <div className="altLoadingWrapper">
                 <Spinner />
@@ -1229,6 +1271,7 @@ const Edit = (props: EditProps) => {
                   img={scene.img}
                   text={scene.text}
                   onReplaceText={() => handleReplaceText(scene)}
+                  onReplaceImage={() => handleReplaceImage(scene)}
                   onReplaceAll={() => handleReplaceAll(scene)}
                 />
               ))

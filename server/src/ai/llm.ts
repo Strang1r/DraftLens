@@ -210,13 +210,25 @@ export async function generateSceneAlternativesFromLLM(args: {
   text: string[];     // 当前 scene 原文
 }): Promise<SceneAlternatives> {
   const system = `
-You rewrite ONE scene into TWO alternative versions as STRICT JSON only.
-Return JSON with EXACT keys: conversational, professional.
-Each must contain key: text (array of 1-3 paragraphs). No other keys. No markdown.
+You are given factual content about one scene.
+
+Generate TWO entirely new versions that present the SAME factual information,
+but from clearly different narrative angles.
+
+Return STRICT JSON with EXACT keys: conversational, professional.
+Each must contain key: text (array of 1-3 paragraphs). No other keys. No markdown. No commentary.
+
+CRITICAL:
+- Do NOT paraphrase the original sentence-by-sentence.
+- Do NOT preserve the original structure.
+- Reframe the content from new perspectives.
+- You may change the order of ideas.
+- You may introduce narrative framing (e.g., historical impact, human motivation, technological shift),
+  but do NOT introduce new factual claims.
+- The two versions must feel like independently written texts.
 
 Constraints:
 - Language: English only.
-- Keep the same factual meaning; do not introduce new facts.
 - conversational: friendly, simple, approachable, but still accurate.
 - professional: formal, concise, neutral tone.
 - Avoid lists/bullets.
@@ -387,7 +399,7 @@ export async function generateSceneRationaleFromLLM(args: {
 You explain the writing rationale for ONE scene as STRICT JSON only.
 Return JSON with EXACT key: rationale. No other keys. No markdown.
 
-What to include in rationale (1 sentences, <= 40 words):
+What to include in rationale (1 sentences, <= 25 words):
 - Why this scene exists (writing intent / goal)
 - What role it plays in the overall script (setup, context, transition, evidence, payoff, etc.)
 - Stay grounded in the given text; do NOT add new facts.
@@ -579,7 +591,7 @@ Now output a new suggestion as JSON:
 }
 
 export async function generateChatReplyFromLLM(args: {
-  selectedText: string;   // 用户选中的句子
+  selectedText: string;   // 用户选中的词/短语/句子
   userPrompt: string;     // 用户输入的问题
   sceneText: string[];    // 当前 scene 全文（用于限制上下文）
 }): Promise<ChatRewriteResponse> {
@@ -593,6 +605,7 @@ SCOPE (allowed):
 - Answer questions about the script content and the selected text.
 - You MAY use brief general knowledge to explain terms/entities mentioned in the script (e.g., places, people, events),
   as long as it helps the user work on the script.
+- The selected text may be a word/phrase or a full sentence. If the user asks “where is it/what is it/how much is it”, answer about the selected text.
 - You MAY ask one short clarification question if the user’s request is ambiguous.
 
 STRICT RULES:
@@ -658,5 +671,67 @@ User request:
       answer: raw.trim(),
       replacement: null,
     };
+  }
+}
+
+export async function generateChatReplyFromLLM2(args: {
+  userPrompt: string;   // 用户输入的问题
+  sceneText?: string[]; // 可选：当前 scene 全文（当作上下文）
+}): Promise<{ answer: string }> {
+  const systemPrompt = `
+You are an AI assistant inside a script editor.
+
+GOAL:
+Help the user by answering questions or giving suggestions related to the CURRENT scene text when provided.
+
+RULES:
+- If scene text is provided, use it as the foundation.
+- You ARE allowed to expand, elaborate, or make the scene more conversational or vivid,
+  as long as it remains consistent with the original meaning.
+- Do NOT introduce unrelated topics.
+- Keep responses clear and useful.
+- Return STRICT JSON only.
+
+STRICT RULES:
+- Return STRICT JSON only. No markdown. No extra text.
+
+JSON format:
+{ "answer": string }
+`.trim();
+
+  const prompt = (args.userPrompt ?? "").trim();
+  const scene = Array.isArray(args.sceneText) ? args.sceneText : [];
+  const scenePlain = scene.join("\n");
+
+  if (!prompt) return { answer: "Please type a message." };
+
+  const userPromptFormatted = `
+Scene (optional context):
+${scenePlain || "(empty)"}
+
+User message:
+"${prompt}"
+`.trim();
+
+  const response = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.5,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPromptFormatted },
+    ],
+    // 强制更像 JSON（SDK typings 可能需要 as any）
+    response_format: { type: "json_object" } as any,
+  });
+
+  const raw = response.choices[0]?.message?.content ?? "";
+
+  try {
+    const parsed = JSON.parse(raw);
+    const answer = String(parsed.answer ?? "").trim();
+    return { answer: answer || "No response." };
+  } catch {
+    // 兜底：模型没按 JSON 输出时，直接当文本回传
+    return { answer: raw.trim() || "No response." };
   }
 }

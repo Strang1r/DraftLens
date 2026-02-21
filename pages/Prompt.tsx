@@ -129,6 +129,25 @@ const Prompt = () => {
     }
   }, [location.search]);
 
+  // 自动填充上次的指令
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const cond = params.get("cond");
+
+    const conditionId =
+      cond && ["1", "2", "3", "4", "5", "6"].includes(cond) ? cond : "1";
+
+    const last = sessionStorage.getItem(`lastInstruction_cond_${conditionId}`) || "";
+    setInput(last);
+
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    });
+  }, [location.search]);
+
   // 自动调整文本框高度
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -148,11 +167,16 @@ const Prompt = () => {
     setSubmittedInput(null);
     e.preventDefault();
 
+    const conditionId = sessionStorage.getItem("experimentConditionId") || "1";
+
     if (isGenerating) return;
     setIsGenerating(true);
 
     const instruction = input.trim();
     if (!instruction) { setIsGenerating(false); return; }
+
+    // 记住这次发给 AI 的指令
+    sessionStorage.setItem(`lastInstruction_cond_${conditionId}`, instruction);
 
     setSubmittedInput(instruction);
     setInput('');
@@ -169,12 +193,12 @@ const Prompt = () => {
 
     await sleep(1000);
 
-    const conditionId = sessionStorage.getItem("experimentConditionId") || "1";
 
     // 统一兜底：写入 draft + 跳 /final
     const goWithFallback = (reason?: any) => {
       console.warn("⚠️ Using fallback because backend/AI unavailable:", reason);
       const draft = makeDraftFallback(instruction);
+      sessionStorage.removeItem("alternativesByScene");
       sessionStorage.setItem("draft", JSON.stringify(draft));
 
       // 新增：把每个 scene 的问题句整理成 issuesByScene
@@ -250,6 +274,7 @@ const Prompt = () => {
       }
 
       sessionStorage.setItem("draft", JSON.stringify(draft));
+      sessionStorage.removeItem("alternativesByScene");
       navigate("/final");
 
     } catch (err) {

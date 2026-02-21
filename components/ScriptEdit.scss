@@ -168,11 +168,12 @@
       }
 
       .subTitle {
-        height: calc(70 / 1080 * 100vh);
+        height: calc(72 / 1080 * 100vh);
         width: 100%;
         border-bottom: solid calc(1 / 1080 * 100vh) #f3f1ef;
 
-        h4 {
+        h4,
+        .tip {
           font-size: calc(17.5 / 1080 * 100vh);
           color: #989491;
           font-weight: 500;
@@ -188,6 +189,20 @@
 
           &::selection {
             background: #f3e4d6;
+          }
+        }
+
+        .tip {
+          font-size: calc(14.5 / 1080 * 100vh);
+          color: #aba4a0;
+          margin-top: calc(6 / 1080 * 100vh);
+
+          &::before {
+            font-family: 'iconfont';
+            content: '\e76d';
+            display: inline-block;
+            margin-right: calc(6 / 1920 * 100vw);
+            font-size: calc(14 / 1080 * 100vh);
           }
         }
       }
@@ -353,7 +368,7 @@
         }  */
 
         .scriptText {
-          margin-top: calc(40 / 1080 * 100vh);
+          margin-top: calc(36 / 1080 * 100vh);
           padding-bottom: calc(40 / 1080 * 100vh);
           font-size: calc(17 / 1080 * 100vh);
           color: #222222;
@@ -363,6 +378,15 @@
           white-space: pre-wrap; // 关键：让 \n 显示成段落
           outline: none;
           animation: fadeIn 0.8s ease-out;
+          transition: all 0.4s ease;
+
+          &:hover {
+            background: rgb(246, 244, 240);
+          }
+
+          &:focus {
+            background: none;
+          }
 
           &::selection {
             background: #f3e4d6;
@@ -380,8 +404,39 @@
         display: flex;
         justify-content: space-between;
 
+        .pre,
+        .next {
+          display: flex;
+          align-items: center;
+          flex-direction: column;
+
+          p {
+            font-size: calc(14 / 1080 * 100vh);
+            color: #776353;
+            display: inline-block;
+
+            &:nth-child(2) {
+              margin-top: calc(8 / 1080 * 100vh);
+            }
+
+            &:last-child {
+              margin-top: calc(-4 / 1080 * 100vh);
+            }
+
+            &.invalide {
+
+              opacity: 0.4 !important;
+
+            }
+
+          }
+
+
+        }
+
         .preBtn,
         .nextBtn {
+          flex: 0 0 auto;
           height: 100%;
           width: calc(38 / 1920 * 100vw);
           background-color: #f8f7f5;
@@ -452,8 +507,8 @@
         position: absolute;
         bottom: calc(66 / 1080 * 100vh);
         right: calc(112 / 1920 * 100vw);
-        height: calc(45 / 1080 * 100vh);
-        width: calc(160 / 1920 * 100vw);
+        height: calc(48 / 1080 * 100vh);
+        width: calc(164 / 1920 * 100vw);
         background-color: #f8f7f5;
         border: solid calc(1.5 / 1920 * 100vw) #cfc6c0;
         border-radius: calc(2 / 1080 * 100vh);
@@ -475,7 +530,7 @@
         h5 {
           font-size: calc(17 / 1080 * 100vh);
           color: #776353;
-          font-weight: 500;
+          font-weight: 600;
 
           &::before {
             font-family: 'iconfont';
@@ -491,8 +546,8 @@
         position: absolute;
         bottom: calc(66 / 1080 * 100vh);
         right: calc(300 / 1920 * 100vw);
-        height: calc(45 / 1080 * 100vh);
-        width: calc(160 / 1920 * 100vw);
+        height: calc(48 / 1080 * 100vh);
+        width: calc(164 / 1920 * 100vw);
         background-color: #f8f7f5;
         border: solid calc(1.5 / 1920 * 100vw) #cfc6c0;
         border-radius: calc(2 / 1080 * 100vh);
@@ -514,7 +569,7 @@
         h5 {
           font-size: calc(17 / 1080 * 100vh);
           color: #776353;
-          font-weight: 500;
+          font-weight: 600;
 
           &::before {
             font-family: 'iconfont';
@@ -542,6 +597,7 @@
     .messages {
       flex: 1;
       overflow-y: auto;
+      scroll-behavior: smooth;
 
       &::-webkit-scrollbar {
         width: 0;
@@ -877,6 +933,36 @@
   opacity: 0;
   transition: opacity 0.4s ease;
 
+  .closeButton {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    right: calc(100 / 1920 * 100vw);
+    width: calc(66 / 1920 * 100vw);
+    height: calc(66 / 1080 * 100vh);
+    border-radius: calc(2 / 1080 * 100vh);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0.4;
+    transition: all 0.3s ease;
+    z-index: 10;
+
+    &::after {
+      font-family: 'iconfont';
+      content: '\e6fa';
+      display: inline-block;
+      font-size: calc(50 / 1080 * 100vh);
+      color: #ffffff;
+    }
+
+    &:hover {
+      opacity: 0.9;
+      background-color: #939393;
+    }
+  }
+
   &.open {
     opacity: 1;
   }
@@ -929,7 +1015,6 @@
     background-color: #fffffe;
     border-radius: calc(2 / 1080 * 100vh);
     border: solid calc(1 / 1920 * 100vw) #dcd7d4;
-
 
 
     .altLoadingWrapper {

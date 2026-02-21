@@ -11,6 +11,8 @@ type SceneModelProps = {
 const SceneModel = ({ id, subTitle, scriptText, scriptImg }: SceneModelProps) => {
 
   const navigate = useNavigate();
+  const conditionId = sessionStorage.getItem("experimentConditionId") || "1";
+  const isCond1 = conditionId === "1";
 
   return (
     <div className='sceneModel' id={id}>
@@ -31,10 +33,12 @@ const SceneModel = ({ id, subTitle, scriptText, scriptImg }: SceneModelProps) =>
             tabIndex={0}
             onClick={() => {
               const conditionId = sessionStorage.getItem("experimentConditionId") || "1";
-              navigate(`/condition${conditionId}/${id}`);
+              navigate(`/condition${conditionId}/${id}`, {
+                state: isCond1 ? { openAlternative: true } : undefined,
+              });
             }}
           >
-            <h5>Edit</h5>
+            <h5>{isCond1 ? "Show Alternatives and Edit" : "Edit"}</h5>
           </div>
         </div>
 
