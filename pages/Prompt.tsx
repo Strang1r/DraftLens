@@ -191,7 +191,7 @@ const Prompt = () => {
 
     setShowAIResponse(true);
 
-    await sleep(1000);
+    await sleep(500);
 
 
     // 统一兜底：写入 draft + 跳 /final

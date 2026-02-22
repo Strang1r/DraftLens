@@ -1,11 +1,8 @@
 import "dotenv/config";
 import OpenAI from "openai";
 import { z } from "zod";
-import { GoogleGenAI } from "@google/genai";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 //生成图片
 /* export const DraftSchema = z.object({
@@ -103,7 +100,6 @@ export type SceneAlternatives = z.infer<typeof SceneAlternativesSchema>;
 
 export type Draft = z.infer<typeof DraftSchema>;
 
-
 export function withTimeout<T>(p: Promise<T>, ms: number, label = "timeout"): Promise<T> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(label)), ms);
@@ -129,7 +125,7 @@ Return JSON with EXACT keys: mainTitle, scenes. No other keys. No markdown. No c
 Constraints:
 - Language: English only.
 - mainTitle: <= 10 words.
-- scenes: 4 to 5 items.
+- scenes: 3 to 5 items.
 - Each scene must have:
  - id: number (1..5)
  - subTitle: string, <= 10 words.
@@ -150,26 +146,18 @@ Image guidance (for img selection only):
 - Do not describe the image in text; only choose the appropriate "/assets/x.png".
 `.trim();
 
-  const req = ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    config: {
-      temperature: 0.4,
-      responseMimeType: "application/json",
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { text: `SYSTEM:\n${system}\n\nUSER:\n${user}\n\nReturn ONLY valid JSON.` },
-        ],
-      },
+  const req = client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.4,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
     ],
   });
 
   const resp = await withTimeout(req, 20000);
-
-  // Gemini 返回值不是 choices/message；一般直接 resp.text
-  const content = (resp.text ?? "").trim() || "{}";
+  const content = resp.choices?.[0]?.message?.content ?? "{}";
 
   console.log("LLM response:", content);
 
@@ -180,20 +168,15 @@ Image guidance (for img selection only):
     throw new Error("LLM returned non-JSON");
   }
 
-
   // 校验结构
   return DraftSchema.parse(parsed);
 }
 
-export async function generateSceneImageBase641(args: {
+export async function generateSceneImageBase64(args: {
   mainTitle: string;
   subTitle: string;
   text: string[];
 }) {
-  // 1. 获取模型 (Gemini Pro Vision 或最新的 Imagen 模型，取决于你的权限)
-  // 注意：在 Gemini 1.5 系列中，Imagen 3 通常作为工具或独立模型调用
-  const model = genAI.getGenerativeModel({ model: "imagen-3" });
-
   const prompt = `
 Square 1:1 illustration, warm brown/sepia tone, story hand-sketched style.
 Rough pencil/ink lines, minimal detail, non-photorealistic.
@@ -205,24 +188,20 @@ Scene content: ${args.text.join(" ")}
 Depict the core idea of this scene visually.
 `.trim();
 
-  // 2. 调用生成接口
-  const response = await model.generateContent(prompt);
+  const resp = await client.images.generate({
+    model: "gpt-image-1-mini",
+    prompt,
+    size: "1024x1024",
+  });
 
-  // 3. 提取图像数据
-  // 注意：Gemini 的返回结构与 OpenAI 不同，通常在 inlineData 中
-  const generatedPart = response.response.candidates?.[0]?.content.parts.find(
-    (part) => part.inlineData?.mimeType.startsWith("image/")
-  );
-
-  if (!generatedPart || !generatedPart.inlineData) {
-    console.error("Image generation failed or no data returned:", response);
-    throw new Error("No image data returned from Gemini");
+  const b64 = resp.data?.[0]?.b64_json;
+  if (!b64) {
+    // 如果没 b64，直接把 resp.data 打出来看
+    console.log("Image resp.data:", resp.data);
+    throw new Error("No b64_json returned from image model");
   }
 
-  const b64Data = generatedPart.inlineData.data; // 这已经是 base64 字符串了
-  const mimeType = generatedPart.inlineData.mimeType;
-
-  return `data:${mimeType};base64,${b64Data}`;
+  return `data:image/png;base64,${b64}`;
 }
 
 export async function generateSceneAlternativesFromLLM(args: {
@@ -265,38 +244,25 @@ Original scene text:
 ${args.text.join("\n\n")}
 `.trim();
 
-  const req = ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    config: {
-      temperature: 0.4,
-      responseMimeType: "application/json",
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: `SYSTEM:\n${system}\n\nUSER:\n${user}\n\nReturn ONLY valid JSON.`,
-          },
-        ],
-      },
+  const req = client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.4,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
     ],
   });
 
   const resp = await withTimeout(req, 20000, "alt_text_timeout");
-
-  // ✅ Gemini 的返回：resp.text
-  const content = (resp.text ?? "").trim() || "{}";
+  const content = resp.choices?.[0]?.message?.content ?? "{}";
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
   } catch {
-    // 打印出来方便你看 Gemini 是否夹了多余文本
-    console.log("Gemini non-JSON raw:", content);
     throw new Error("LLM returned non-JSON for alternatives");
   }
-
 
   return SceneAlternativesSchema.parse(parsed);
 }
@@ -337,26 +303,18 @@ Paragraphs:
 ${paragraphs.map((p, i) => `P${i + 1}: ${p}`).join("\n\n")}
 `.trim();
 
-  const req = ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    config: {
-      temperature: 0.2,
-      responseMimeType: "application/json",
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: `SYSTEM:\n${system}\n\nUSER:\n${user}\n\nReturn ONLY valid JSON.`,
-          },
-        ],
-      },
+  const req = client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.2,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
     ],
   });
 
   const resp = await withTimeout(req, 15000, "annotation_timeout");
-  const content = (resp.text ?? "").trim() || "{}";
+  const content = resp.choices?.[0]?.message?.content ?? "{}";
 
   console.log("LLM annotation response:", content);
 
@@ -364,17 +322,15 @@ ${paragraphs.map((p, i) => `P${i + 1}: ${p}`).join("\n\n")}
   try {
     parsed = JSON.parse(content);
   } catch {
-    console.log("Gemini non-JSON raw:", content);
     throw new Error("LLM returned non-JSON for annotations");
   }
 
+  // ✅ 结构校验
   const ann = AnnotationsSchema.parse(parsed);
 
   // ✅ 防御：长度不一致时，强制补齐/截断
   if (ann.paragraphs.length !== paragraphs.length) {
-    const fixed = paragraphs.map(
-      (_, i) => ann.paragraphs[i] ?? { keyWords: [], keySentences: [] }
-    );
+    const fixed = paragraphs.map((_, i) => ann.paragraphs[i] ?? { keyWords: [], keySentences: [] });
     return { paragraphs: fixed };
   }
 
@@ -407,32 +363,23 @@ Scene text:
 ${paragraphs.join("\n\n")}
 `.trim();
 
-  const req = ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    config: {
-      temperature: 0.3,
-      responseMimeType: "application/json",
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: `SYSTEM:\n${system}\n\nUSER:\n${user}\n\nReturn ONLY valid JSON.`,
-          },
-        ],
-      },
+  const req = client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.3,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
     ],
   });
 
   const resp = await withTimeout(req, 15000, "why_here_timeout");
-  const content = (resp.text ?? "").trim() || "{}";
+  const content = resp.choices?.[0]?.message?.content ?? "{}";
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
   } catch {
-    console.log("Gemini non-JSON raw:", content);
     throw new Error("LLM returned non-JSON for whyHere");
   }
 
@@ -467,26 +414,18 @@ Scene text:
 ${paragraphs.join("\n\n")}
 `.trim();
 
-  const req = ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    config: {
-      temperature: 0.3,
-      responseMimeType: "application/json",
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: `SYSTEM:\n${system}\n\nUSER:\n${user}\n\nReturn ONLY valid JSON.`,
-          },
-        ],
-      },
+  const req = client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.3,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
     ],
   });
 
   const resp = await withTimeout(req, 15000, "rationale_timeout");
-  const content = (resp.text ?? "").trim() || "{}";
+  const content = resp.choices?.[0]?.message?.content ?? "{}";
 
   console.log("LLM rationale response:", content);
 
@@ -494,7 +433,6 @@ ${paragraphs.join("\n\n")}
   try {
     parsed = JSON.parse(content);
   } catch {
-    console.log("Gemini non-JSON raw:", content);
     throw new Error("LLM returned non-JSON for rationale");
   }
 
@@ -511,22 +449,22 @@ export async function generateSentenceIssuesFromLLM(args: {
   const fullText = paragraphs.join("\n\n");
 
   const system = `
-You identify EXACTLY ONE sentence in a scene that may need revision, as STRICT JSON only.
+You identify 0-2 sentences in a scene that may need revision, as STRICT JSON only.
 
 Return JSON with EXACT key:
 - issues
 
-issues is an array with EXACT length 1, containing ONE object with EXACT keys:
-- id: string ("s1")
+issues is an array of 0-2 objects. Each object MUST have EXACT keys:
+- id: string ("s1" or "s2" ...)
 - sentence: string
 - issue: string
 
 Rules:
 - Language: English only.
-- Select the SINGLE sentence that is MOST likely to need revision (choose the worst one). (examples: overly generic/neutral phrasing, repetitive/templated AI style, ambiguity, missing specificity, claims that should be verified, unclear causality, etc.).
+- Pick 1-2 sentences that are likely to need revision (examples: overly generic/neutral phrasing, repetitive/templated AI style, ambiguity, missing specificity, claims that should be verified, unclear causality or something similar).
 - IMPORTANT: sentence MUST be copied EXACTLY from the provided scene text, including punctuation and spacing. Do NOT paraphrase.
 - issue MUST describe the problem in <= 15 words.
-- If truly nothing seems problematic, return {"issues": []}. (Only in that case.)
+- If nothing seems problematic, return issues: [].
 - No markdown. Output MUST be valid JSON parsable by JSON.parse.
 `.trim();
 
@@ -535,26 +473,18 @@ Scene text:
 ${fullText}
 `.trim();
 
-  const req = ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    config: {
-      temperature: 0.2,
-      responseMimeType: "application/json",
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: `SYSTEM:\n${system}\n\nUSER:\n${user}\n\nReturn ONLY valid JSON.`,
-          },
-        ],
-      },
+  const req = client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.2,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
     ],
   });
 
   const resp = await withTimeout(req, 15000, "sentence_issues_timeout");
-  const content = (resp.text ?? "").trim() || "{}";
+  const content = resp.choices?.[0]?.message?.content ?? "{}";
 
   console.log("LLM sentence issues response:", content);
 
@@ -562,7 +492,6 @@ ${fullText}
   try {
     parsed = JSON.parse(content);
   } catch {
-    console.log("Gemini non-JSON raw:", content);
     throw new Error("LLM returned non-JSON for sentence issues");
   }
 
@@ -577,7 +506,7 @@ ${fullText}
     return s.length > 0 && fullText.includes(s);
   });
 
-  const normalized = filtered.slice(0, 1).map((it, idx) => ({
+  const normalized = filtered.slice(0, 2).map((it, idx) => ({
     id: `s${idx + 1}`,
     sentence: it.sentence,
     issue: it.issue,
@@ -628,26 +557,18 @@ ${prev || "(none)"}
 Now output a new suggestion as JSON:
 `.trim();
 
-  const req = ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    config: {
-      temperature: 0.7,
-      responseMimeType: "application/json",
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: `SYSTEM:\n${system}\n\nUSER:\n${user}\n\nReturn ONLY valid JSON.`,
-          },
-        ],
-      },
+  const req = client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.7, // 稍微高一点，保证“换角度”
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
     ],
   });
 
   const resp = await withTimeout(req, 15000, "issue_suggestion_timeout");
-  const content = (resp.text ?? "").trim() || "{}";
+  const content = resp.choices?.[0]?.message?.content ?? "{}";
 
   console.log("LLM issue suggestion response:", content);
 
@@ -655,7 +576,6 @@ Now output a new suggestion as JSON:
   try {
     parsed = JSON.parse(content);
   } catch {
-    console.log("Gemini non-JSON raw:", content);
     throw new Error("LLM returned non-JSON for issue suggestion");
   }
 
@@ -722,44 +642,33 @@ User request:
 "${args.userPrompt}"
 `.trim();
 
-  const req = ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    config: {
-      temperature: 0.4,
-      responseMimeType: "application/json",
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: `SYSTEM:\n${systemPrompt}\n\nUSER:\n${userPromptFormatted}\n\nReturn ONLY valid JSON.`,
-          },
-        ],
-      },
+  const response = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.4, // 稍微稳定一点
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPromptFormatted },
     ],
   });
 
-  const resp = await req;
-  const raw = (resp.text ?? "").trim();
+  const raw = response.choices[0]?.message?.content ?? "";
 
   try {
     const parsed = JSON.parse(raw);
 
-    const type = String(parsed.type ?? "").trim();
-    const answer = String(parsed.answer ?? "").trim();
-
     return {
-      type: type as ChatRewriteResponse["type"],
-      answer,
+      type: parsed.type,
+      answer: String(parsed.answer ?? "").trim(),
       replacement:
-        type === "rewrite" ? String(parsed.replacement ?? "").trim() : null,
+        parsed.type === "rewrite"
+          ? String(parsed.replacement ?? "").trim()
+          : null,
     };
-  } catch {
+  } catch (err) {
     // 万一模型没按 JSON 输出，兜底
     return {
       type: "advice",
-      answer: raw,
+      answer: raw.trim(),
       replacement: null,
     };
   }
@@ -804,26 +713,18 @@ User message:
 "${prompt}"
 `.trim();
 
-  const req = ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    config: {
-      temperature: 0.5,
-      responseMimeType: "application/json",
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: `SYSTEM:\n${systemPrompt}\n\nUSER:\n${userPromptFormatted}\n\nReturn ONLY valid JSON.`,
-          },
-        ],
-      },
+  const response = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.5,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPromptFormatted },
     ],
+    // 强制更像 JSON（SDK typings 可能需要 as any）
+    response_format: { type: "json_object" } as any,
   });
 
-  const resp = await req;
-  const raw = (resp.text ?? "").trim();
+  const raw = response.choices[0]?.message?.content ?? "";
 
   try {
     const parsed = JSON.parse(raw);
@@ -831,97 +732,6 @@ User message:
     return { answer: answer || "No response." };
   } catch {
     // 兜底：模型没按 JSON 输出时，直接当文本回传
-    return { answer: raw || "No response." };
+    return { answer: raw.trim() || "No response." };
   }
 }
-
-export async function generateSceneImageBase642(args: {
-  mainTitle: string;
-  subTitle: string;
-  text: string[];
-}) {
-  // 注意：在 AI Studio 中，Imagen 3 是独立模型
-  // 如果 gemini-2.0-flash 等模型不支持直接画图，需指定 imagen 模型
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
-
-  const prompt = `
-Square 1:1 illustration, warm brown/sepia tone, story hand-sketched style.
-Rough pencil/ink lines, minimal detail, non-photorealistic.
-No text in image. No UI/screenshots.
-
-Scene title: ${args.subTitle}
-Context: ${args.mainTitle}
-Scene content: ${args.text.join(" ")}
-Depict the core idea of this scene visually.
-`.trim();
-
-  try {
-    // 调用生成接口
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    });
-    const response = await result.response;
-    const part = response.candidates?.[0]?.content.parts.find(p => p.inlineData);
-
-    if (!part || !part.inlineData) {
-      throw new Error("模型响应成功但未包含图像数据。请检查 API Key 的 Imagen 权限。");
-    }
-
-    return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-  } catch (error: any) {
-    if (error.status === 404) {
-      console.error("确认：该 API Key 无法访问 imagen-3 模型。");
-      // 这里的报错意味着你需要去 Google AI Studio 确认模型列表中是否有 Imagen
-    }
-    throw error;
-  }
-}
-
-export async function generateSceneImageBase64(args: {
-  mainTitle: string;
-  subTitle: string;
-  text: string[];
-}) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  // 注意：predict 接口通常使用 v1beta 路径
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
-
-  const prompt = `A professional square-framed illustration in light sepia tones, low saturation, story hand-sketched style. Rough lines. No text. Scene: ${args.subTitle}. Context: ${args.text.join(" ")}`;
-
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        instances: [{ prompt }],
-        parameters: {
-          sampleCount: 1,
-          aspectRatio: "1:1",
-          outputMimeType: "image/png",
-        },
-      }),
-    });
-
-    const data = await response.json();
-
-    // 1. 检查 API 是否返回了错误对象
-    if (data.error) {
-      throw new Error(`Google API Error: ${data.error.message}`);
-    }
-
-    // 2. Imagen 4 的 predictions 有时会因为安全原因返回空数组
-    if (!data.predictions || data.predictions.length === 0) {
-      console.error("Possible safety filter block:", data);
-      throw new Error("Image generation was blocked by safety filters.");
-    }
-
-    // Imagen 4 的返回结构通常在 predictions 数组里
-    const b64Data = data.predictions[0].bytesBase64Encoded || data.predictions[0];
-
-    return `data:image/png;base64,${b64Data}`;
-  } catch (error) {
-    console.error("Imagen 4 Fetch Error:", error);
-    throw error;
-  }
-}
-

@@ -125,20 +125,25 @@ const Edit = (props: EditProps) => {
 
   // 保存回 draft（唯一真相）
   const saveDraftToStorage = (nextMain: string, nextSub: string[], nextText: string[][], nextImg: string[]) => {
-    const raw = sessionStorage.getItem("draft");
-    if (!raw) return;
+    try {
+      const raw = sessionStorage.getItem("draft");
+      if (!raw) return;
 
-    const d: Draft = JSON.parse(raw);
-    d.mainTitle = nextMain;
+      const d: Draft = JSON.parse(raw);
+      d.mainTitle = nextMain;
 
-    d.scenes = d.scenes.map((s, i) => ({
-      ...s,
-      subTitle: nextSub[i] ?? s.subTitle,
-      text: nextText[i] ?? s.text,
-      img: nextImg[i] ?? s.img,
-    }));
+      d.scenes = d.scenes.map((s, i) => ({
+        ...s,
+        subTitle: nextSub[i] ?? s.subTitle,
+        text: nextText[i] ?? s.text,
+        img: nextImg[i] ?? s.img,
+      }));
 
-    sessionStorage.setItem("draft", JSON.stringify(d));
+      sessionStorage.setItem("draft", JSON.stringify(d));
+    } catch (e) {
+      console.error("Failed to save draft:", e);
+      // 这里可以提示用户手动刷新或联系开发者
+    }
   };
 
   // prev / next
@@ -816,6 +821,101 @@ const Edit = (props: EditProps) => {
     setSelectedText("");
   };
 
+  //重新生成图片
+  const lastGeneratedTextRef = useRef<{ [key: number]: string }>({});
+  useEffect(() => {
+    const savedDraft = sessionStorage.getItem("draft");
+    if (savedDraft) {
+      try {
+        const draft = JSON.parse(savedDraft);
+        const initialFingerprints: { [key: number]: string } = {};
+
+        draft.scenes.forEach((scene: any, index: number) => {
+          // 统一使用正则去除所有不可见字符
+          initialFingerprints[index] = scene.text.join("").replace(/\s+/g, "");
+        });
+
+        lastGeneratedTextRef.current = initialFingerprints;
+      } catch (e) {
+        console.error("初始化指纹失败:", e);
+      }
+    }
+  }, []);
+
+  // 将 Base64 转换为 Blob 的工具函数
+  const base64ToBlob = (base64: string) => {
+    const parts = base64.split(';base64,');
+    const contentType = parts[0].split(':')[1];
+    const raw = window.atob(parts[1]);
+    const rawLength = raw.length;
+    const uInt8Array = new Uint8Array(rawLength);
+    for (let i = 0; i < rawLength; ++i) {
+      uInt8Array[i] = raw.charCodeAt(i);
+    }
+    return new Blob([uInt8Array], { type: contentType });
+  };
+
+  // 重复Regenerate
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  const handleRegenerateImage = async () => {
+    if (isGenerating) return;
+
+    // 1. 获取标准化文本
+    const currentText = editedText[currentSceneIndex].join("").replace(/\s+/g, "");
+    const lastText = (lastGeneratedTextRef.current[currentSceneIndex] || "");
+
+    // 2. 只有文字没变且已有图时才 return
+    if (lastText === currentText && editedImg[currentSceneIndex]) {
+      setIsRegenerating(true);
+      setTimeout(() => {
+        setIsRegenerating(false);
+      }, 2000);
+      return;
+    }
+
+    setIsGenerating(true);
+
+    try {
+      const res = await fetch("http://localhost:3001/api/script/generate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mainTitle: editedMainTitle,
+          subTitle: editedSubTitle[currentSceneIndex],
+          text: editedText[currentSceneIndex],
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to generate image");
+
+      const data = await res.json(); // 预期返回 { b64: "data:image/png;base64,..." }
+
+      if (data.b64) {
+        // 撤销该场景旧的 Blob URL（如果存在）
+        if (editedImg[currentSceneIndex]?.startsWith('blob:')) {
+          URL.revokeObjectURL(editedImg[currentSceneIndex]);
+        }
+        // 关键改动：将 Base64 转为临时 URL
+        const blob = base64ToBlob(data.b64);
+        const blobUrl = URL.createObjectURL(blob); // 这是一个类似 blob:http://... 的短链接
+        const nextImg = [...editedImg];
+        nextImg[currentSceneIndex] = blobUrl; // 存入这个短链接，它几乎不占存储空间
+        setEditedImg(nextImg);
+
+        lastGeneratedTextRef.current[currentSceneIndex] = currentText;
+
+        // 现在的 saveDraftToStorage 存的是 blob URL，不会再触发 QuotaExceededError
+        saveDraftToStorage(editedMainTitle, editedSubTitle, editedText, nextImg);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+
   return (
     <div className={`edit1BackGround ${props.showChatBot ? "withChatBot" : ""}`}>
       <div className='logo'>
@@ -826,11 +926,29 @@ const Edit = (props: EditProps) => {
         <div className='imgArea'>
           <div className='sceneOptions'>
             <div className='sceneImg' key={currentSceneIndex}>
-              <img src={editedImg[currentSceneIndex]} alt="" />
+              {
+                isGenerating && (
+                  <div className="spinnerContainer">
+                    <Spinner />
+                  </div>
+                )
+              }
+              {isGenerating && (
+                <div className="imgOverlay">
+                </div>
+              )}
+              <img className={isGenerating ? "blurred" : ""} src={editedImg[currentSceneIndex]} alt="" />
             </div>
-            <div className='regenerateBtn'>
-              <h5>Regenerate</h5>
+            <div className={`${isGenerating ? "disabled" : ""} regenerateBtn`} onClick={handleRegenerateImage}>
+              <h5>{isGenerating ? "Generating..." : "Regenerate"}</h5>
             </div>
+            {
+              isRegenerating && (
+                <div className="regenerateTip">
+                  Please revise the text first!
+                </div>
+              )
+            }
           </div>
         </div>
         <div className='textArea'>

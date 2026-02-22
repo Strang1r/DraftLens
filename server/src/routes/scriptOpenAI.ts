@@ -1,17 +1,7 @@
 import { Router } from "express";
-import {
-  generateAnnotationsFromLLM,
-  withTimeout, generateDraftFromLLM,
-  generateSceneImageBase64,
-  generateSceneAlternativesFromLLM,
-  generateWhyHereFromLLM,
-  generateSceneRationaleFromLLM,
-  generateSentenceIssuesFromLLM,
-  generateIssueSuggestionFromLLM,
-  generateChatReplyFromLLM,
-  generateChatReplyFromLLM2
-}
-  from "../ai/llm";
+import { generateDraftFromLLM, generateSceneImageBase64, generateSceneAlternativesFromLLM, generateWhyHereFromLLM, generateSceneRationaleFromLLM, generateSentenceIssuesFromLLM, generateIssueSuggestionFromLLM, generateChatReplyFromLLM, generateChatReplyFromLLM2 } from "../ai/llm";
+import { withTimeout } from "../ai/llm";
+import { generateAnnotationsFromLLM } from "../ai/llm";
 
 console.log("🔥 USING SCRIPT ROUTE FILE:", __filename);
 
@@ -461,51 +451,6 @@ router.post("/chat2", async (req, res) => {
 
     return res.status(500).json({
       answer: "The AI assistant is temporarily unavailable.",
-    });
-  }
-});
-
-router.post("/generate-image", async (req, res) => {
-
-  try {
-    const { mainTitle, subTitle, text } = req.body ?? {};
-
-    // 1. 基础参数校验
-    const safeMainTitle = String(mainTitle ?? "Untitled");
-    const safeSubTitle = String(subTitle ?? "New Scene");
-    const safeText = Array.isArray(text)
-      ? text.map(t => String(t ?? ""))
-      : [];
-
-    // 如果文本内容为空，生成可能没有意义，可以返回 400
-    if (safeText.length === 0 || (safeText.length === 1 && safeText[0] === "")) {
-      return res.status(400).json({
-        error: "Scene content is empty. Please provide some text to generate an image."
-      });
-    }
-
-    console.log(`Generating image for scene: ${safeSubTitle}...`);
-
-    // 2. 调用 LLM 生成图片
-    const base64DataUrl = await generateSceneImageBase64({
-      mainTitle,
-      subTitle,
-      text,
-    });
-
-    // 3. 返回给前端 (前端可以通过 data.b64 获取)
-    return res.json({
-      b64: base64DataUrl
-    });
-
-  } catch (error: any) {
-    console.error("Image generation route error:", error);
-
-    // 根据 Gemini 的错误类型返回更友好的提示
-    // 比如因为安全过滤（Safety）导致的生成失败
-    const isSafety = error.message?.includes("safety") || error.message?.includes("filtered");
-    return res.status(500).json({
-      error: isSafety ? "Content safety filter triggered." : "AI Artist is busy, try again."
     });
   }
 });
