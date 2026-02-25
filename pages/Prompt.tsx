@@ -13,6 +13,20 @@ const Prompt = () => {
   const sleep = (ms: number) =>
     new Promise(resolve => setTimeout(resolve, ms));
 
+  // 将 Base64 转换为 Blob 的工具函数
+  const base64ToBlob = (base64: string) => {
+    const parts = base64.split(';base64,');
+    const contentType = parts[0].split(':')[1];
+    const raw = window.atob(parts[1]);
+    const rawLength = raw.length;
+    const uInt8Array = new Uint8Array(rawLength);
+    for (let i = 0; i < rawLength; ++i) {
+      uInt8Array[i] = raw.charCodeAt(i);
+    }
+    return new Blob([uInt8Array], { type: contentType });
+  };
+
+
   // 如果不启动后端，可以用这个函数生成假数据测试前端
   const makeDraftFallback = (instruction: string) => ({
     id: "single",
@@ -161,11 +175,37 @@ const Prompt = () => {
   };
 
 
+  // 校验instruction
+  function isStoryScriptRequest(raw: string) {
+    const s = raw.trim();
+
+    // 1) 太短直接拒绝
+    if (s.length < 5) return { ok: false, reason: "too_short" };
+
+    // 2) 去掉空格后，如果几乎全是符号/标点/数字：拒绝
+    const noSpace = s.replace(/\s+/g, "");
+    const alphaCount = (noSpace.match(/[a-zA-Z]/g) || []).length;
+    const cjkCount = (noSpace.match(/[\u4e00-\u9fff]/g) || []).length;
+    const letterCount = alphaCount + cjkCount;
+
+    // 没有任何字母/中文
+    if (letterCount === 0) return { ok: false, reason: "no_letters" };
+
+    return { ok: true as const };
+  }
+
+  const [inputError, setInputError] = useState(false);
+
+  // 提交后不能再修改输入框了，直到 AI 响应回来
+  const [hasSubmittedValidInstruction, setHasSubmittedValidInstruction] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (hasSubmittedValidInstruction) return;
 
     setShowAIResponse(false);
     setSubmittedInput(null);
-    e.preventDefault();
+    setInputError(false);
 
     const conditionId = sessionStorage.getItem("experimentConditionId") || "1";
 
@@ -174,6 +214,17 @@ const Prompt = () => {
 
     const instruction = input.trim();
     if (!instruction) { setIsGenerating(false); return; }
+
+    const check = isStoryScriptRequest(instruction);
+    if (!check.ok) {
+      setIsGenerating(false);
+      setSubmittedInput(instruction);
+      setShowAIResponse(true);
+      setInputError(true);
+      return;
+    }
+
+    setHasSubmittedValidInstruction(true);
 
     // 记住这次发给 AI 的指令
     sessionStorage.setItem(`lastInstruction_cond_${conditionId}`, instruction);
@@ -234,6 +285,24 @@ const Prompt = () => {
       if (!draft) {
         goWithFallback("no_draft_in_response");
         return;
+      }
+
+      // 如果后端直接返回了 base64 图片数据，这里转换成 blobUrl，避免前端存储过大的 base64 字符串
+      if (draft.scenes && Array.isArray(draft.scenes)) {
+        draft.scenes = draft.scenes.map((scene: any) => {
+          // 如果后端返回了 base64 数据
+          if (scene.img && scene.img.startsWith('data:image')) {
+            try {
+              const blob = base64ToBlob(scene.img);
+              const blobUrl = URL.createObjectURL(blob);
+              return { ...scene, img: blobUrl }; // 将巨大的 base64 替换为短小的 blobUrl
+            } catch (err) {
+              console.error("Base64 conversion failed for scene:", scene.id, err);
+              return scene;
+            }
+          }
+          return scene;
+        });
       }
 
       if (conditionId === "5") {
@@ -322,8 +391,14 @@ const Prompt = () => {
         )}
         {showAIResponse && (
           <div className='AIResponse'>
-            <Spinner />
-            <p>Preparing your draft…</p>
+            {
+              !inputError && (
+                <Spinner />
+              )
+            }
+            {
+              inputError ? <p>Tell me what kind of story script you want to generate…</p> : <p>Preparing your draft…</p>
+            }
           </div>
         )}
       </div>

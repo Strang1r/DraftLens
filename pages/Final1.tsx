@@ -5,6 +5,9 @@ import SceneModel from '../components/SceneModel'
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import Regenerate from '../components/Regenerate';
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
+import ExportPDF from '../components/ExportPDF';
 
 
 type DraftScene = {
@@ -77,12 +80,19 @@ const Final1 = () => {
     });
   }, [location.key, finalScript.scenes]);
 
+  // 生成 PDF 的函数
+  const paperRef = useRef<HTMLDivElement | null>(null);
+
+  const handleExportPDF = () => {
+    window.print();
+  };
+
   return (
     <div className="final1BackGround">
       <div className='logo'>
         <img src={logoSvg} alt="" />
       </div>
-      <div className='paper'>
+      <div className='paper' ref={paperRef}>
         <div className='scriptTitle'>
           <div className='titleDec1'>
             <img src={titleDecPng} alt="" />
@@ -104,6 +114,9 @@ const Final1 = () => {
           ))}
         </div>
       </div>
+      <ExportPDF
+        handleExportPDF={handleExportPDF}
+      />
       <Regenerate />
     </div>
   )

@@ -106,3 +106,115 @@
 
   }
 }
+
+// 导出 PDF
+@media print {
+
+  /* 只打印 paper */
+  body * {
+    visibility: hidden;
+  }
+
+  .paper,
+  .paper * {
+    visibility: visible;
+  }
+
+  /* 让 paper 在打印里变成正常文档流，不用 absolute/transform/vw/vh */
+  .paper {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    transform: none !important;
+
+    width: 190mm !important;
+    /* A4 可用宽度 */
+    height: auto !important;
+    overflow: visible !important;
+
+    padding: 6mm 8mm !important;
+    /* 比你原来的 vh/vw 更稳定 */
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
+  /* 展开滚动容器 */
+  .paper .textArea {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  /* 主标题 */
+  .scriptTitle h3 {
+    font-size: 14pt !important;
+    /* 16–20pt都可以试 */
+  }
+
+  /* Scene 小标题 */
+  .sceneModel .subTitle h4 {
+    font-size: 10pt !important;
+  }
+
+  /* 正文 */
+  .sceneModel .script p {
+    font-size: 9pt !important;
+    /* 10–12pt最舒服 */
+    line-height: 1.6 !important;
+
+  }
+
+  /* ✅ 核心1：控制“文字-图片间隙”——不要 space-between，改成固定 gap */
+  .sceneModel .script {
+    display: grid !important;
+    grid-template-columns: 1fr 60mm !important;
+    /* 右侧图片固定列宽 */
+    column-gap: 10mm !important;
+    /* 间隙可调：6~12mm */
+    align-items: start !important;
+  }
+
+  /* 左侧文本不要用 vw 宽度，避免打印被拉扯 */
+  .sceneModel .script .scriptText {
+    width: auto !important;
+  }
+
+  /* ✅ 核心2：图片固定正方形（不会再变形） */
+  .sceneModel .script .scriptImg {
+    width: 60mm !important;
+    height: 60mm !important;
+    /* 强制正方形 */
+    overflow: hidden !important;
+    border-radius: 1mm !important;
+  }
+
+  .sceneModel .script .scriptImg img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    /* 想不裁切就用 contain */
+  }
+
+  /* 减少打印里段落的“松散感”（可选） */
+  .sceneModel .script p {
+    line-height: 2 !important;
+    /* 你原来是 2，打印会显得很空 */
+    margin: 0 !important;
+    text-align: justify !important;
+    /* 如果 justify 看起来怪就用 left */
+  }
+
+  /* 不要把按钮/非必要 UI 打进 PDF */
+  .editButton,
+  .exportPDF,
+  .logo,
+  .regenerate {
+    display: none !important;
+  }
+
+  /* 避免一个 scene 被分页拆开（可选） */
+  .sceneModel {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

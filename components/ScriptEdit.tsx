@@ -241,7 +241,17 @@ const Edit = (props: EditProps) => {
     const nextText = editedText.map(arr => [...arr]);
     const nextImg = [...editedImg];
 
-    nextImg[currentSceneIndex] = alt.img;
+    let finalImg = alt.img;
+    if (finalImg.startsWith("data:image")) {
+      try {
+        const blob = base64ToBlob(finalImg);
+        finalImg = URL.createObjectURL(blob);
+      } catch (err) {
+        console.error("Base64 conversion failed:", err);
+      }
+    }
+
+    nextImg[currentSceneIndex] = finalImg;
 
     setEditedText(nextText);
     setEditedImg(nextImg);
@@ -257,7 +267,20 @@ const Edit = (props: EditProps) => {
     const nextImg = [...editedImg];
 
     nextText[currentSceneIndex] = [...alt.text];
-    nextImg[currentSceneIndex] = alt.img;
+    // 规范化处理图片
+    let finalImg = alt.img;
+    if (finalImg.startsWith("data:image")) {
+      // 如果是 Base64，转为 Blob URL
+      try {
+        const blob = base64ToBlob(finalImg);
+        finalImg = URL.createObjectURL(blob);
+      } catch (err) {
+        console.error("Base64 conversion failed:", err);
+      }
+    }
+    // 如果已是 Blob URL，直接使用（不需要再转换）
+
+    nextImg[currentSceneIndex] = finalImg;
 
     setEditedText(nextText);
     setEditedImg(nextImg);
@@ -302,7 +325,7 @@ const Edit = (props: EditProps) => {
           mainTitle: editedMainTitle,
           subTitle: editedSubTitle[currentSceneIndex],
           text: editedText[currentSceneIndex],
-          generateImages: false, // 先只要文本，图等后续再加（避免接口超时）
+          generateImages: true, // false：文本， true：文本+图片
         }),
       });
 
@@ -314,13 +337,28 @@ const Edit = (props: EditProps) => {
       const normalizeTone = (t: any): AltScene["tone"] =>
         t === "conversational" || t === "professional" ? t : undefined;
 
+      // 核心修改：处理返回的 Base64 图片
       const alts: AltScene[] = (data.alternatives ?? []).map(
-        (a: any, idx: number) => ({
-          id: String(a.id ?? idx + 1),
-          tone: normalizeTone(a.tone),
-          text: Array.isArray(a.text) ? a.text : [],
-          img: String(a.img ?? ""),
-        })
+        (a: any, idx: number) => {
+          let finalImg = String(a.img ?? "");
+
+          // 如果后端返回的是 base64，立即转为 Blob URL 释放内存压力
+          if (finalImg.startsWith("data:image")) {
+            try {
+              const blob = base64ToBlob(finalImg); // 工具函数
+              finalImg = URL.createObjectURL(blob);
+            } catch (err) {
+              console.error("Base64 conversion failed for alternative:", err);
+            }
+          }
+
+          return {
+            id: String(a.id ?? idx + 1),
+            tone: normalizeTone(a.tone),
+            text: Array.isArray(a.text) ? a.text : [],
+            img: finalImg,
+          };
+        }
       );
 
       setAlternativeScene(alts);
@@ -821,7 +859,7 @@ const Edit = (props: EditProps) => {
     setSelectedText("");
   };
 
-  //重新生成图片
+  // 重新生成图片
   const lastGeneratedTextRef = useRef<{ [key: number]: string }>({});
   useEffect(() => {
     const savedDraft = sessionStorage.getItem("draft");
@@ -915,7 +953,6 @@ const Edit = (props: EditProps) => {
     }
   };
 
-
   return (
     <div className={`edit1BackGround ${props.showChatBot ? "withChatBot" : ""}`}>
       <div className='logo'>
@@ -937,7 +974,7 @@ const Edit = (props: EditProps) => {
                 <div className="imgOverlay">
                 </div>
               )}
-              <img className={isGenerating ? "blurred" : ""} src={editedImg[currentSceneIndex]} alt="" />
+              <img className={isGenerating ? "blurred" : ""} src={editedImg[currentSceneIndex] || undefined} alt="" />
             </div>
             <div className={`${isGenerating ? "disabled" : ""} regenerateBtn`} onClick={handleRegenerateImage}>
               <h5>{isGenerating ? "Generating..." : "Regenerate"}</h5>

@@ -3,24 +3,11 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { GoogleGenAI } from "@google/genai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { jsonrepair } from "jsonrepair";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-//生成图片
-/* export const DraftSchema = z.object({
-  mainTitle: z.string().min(1),
-  scenes: z
-    .array(
-      z.object({
-        id: z.number().int(),
-        subTitle: z.string().min(1),
-        text: z.array(z.string().min(1)).min(1),
-      })
-    )
-    .min(4)
-    .max(6),
-}); */
 
 export const AnnotationsSchema = z.object({
   paragraphs: z.array(
@@ -32,8 +19,8 @@ export const AnnotationsSchema = z.object({
 });
 export type Annotations = z.infer<typeof AnnotationsSchema>;
 
-
-export const DraftSchema = z.object({
+//生成图片
+/* export const DraftSchema = z.object({
   mainTitle: z.string().min(1),
   scenes: z
     .array(
@@ -48,7 +35,23 @@ export const DraftSchema = z.object({
     )
     .min(3)
     .max(5),
+}); */
+export const DraftSchema = z.object({
+  mainTitle: z.string().min(1),
+  scenes: z
+    .array(
+      z.object({
+        id: z.number().int().min(1).max(5),
+        subTitle: z.string().min(1).max(88),
+        text: z.array(z.string().min(1)).min(1),
+        annotations: AnnotationsSchema.optional(),
+        rationale: z.string().optional(),
+      })
+    )
+    .length(5) // 强制必须 5 个
 });
+
+export type Draft = z.infer<typeof DraftSchema>;
 
 // condition3 search 
 const WhyHereSchema = z.object({
@@ -101,9 +104,6 @@ const SceneAlternativesSchema = z.object({
 
 export type SceneAlternatives = z.infer<typeof SceneAlternativesSchema>;
 
-export type Draft = z.infer<typeof DraftSchema>;
-
-
 export function withTimeout<T>(p: Promise<T>, ms: number, label = "timeout"): Promise<T> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(label)), ms);
@@ -122,22 +122,68 @@ export async function generateDraftFromLLM(args: {
 }): Promise<Draft> {
   const { instruction } = args;
 
+  // 1. 定义严格的 JSON Schema 🌟
+  const responseSchema = {
+    type: "object",
+    properties: {
+      mainTitle: { type: "string" },
+      scenes: {
+        type: "array",
+        minItems: 5,
+        maxItems: 5,
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "number" },
+            subTitle: { type: "string" },
+            text: {
+              type: "array",
+              items: { type: "string" },
+              minItems: 2,
+              maxItems: 2
+            }
+          },
+          required: ["id", "subTitle", "text"] // 🌟 强制每个场景必须闭合且包含这三个字段
+        }
+      }
+    },
+    required: ["mainTitle", "scenes"]
+  };
+
   const system = `
 You generate a short video script as STRICT JSON only.
 Return JSON with EXACT keys: mainTitle, scenes. No other keys. No markdown. No commentary.
 
 Constraints:
 - Language: English only.
-- mainTitle: <= 10 words.
-- scenes: 4 to 5 items.
+- mainTitle: Max 10 words.
+- scenes: Exactly 5 scenes.
 - Each scene must have:
  - id: number (1..5)
  - subTitle: string, <= 10 words.
-   Must follow this exact format: "SceneX: subtitle"
- - text: array of 1-3 paragraphs (strings), each scene total 80-120 words.
- - img: string, MUST be exactly "/assets/{id}.png" where {id} equals the scene id.
+ - Must follow this exact format: "SceneX: subtitle"
+ - text: An array of 1 to 2 strings, aim for 2 paragraphs per scene to ensure depth. Only use 1 paragraph if the topic is exceptionally concise.
+ - Total word count per scene MUST be between 75 and 95 words (be verbose).
 - Style: popular science + storytelling, clear and accessible.
 - Avoid: first-person ("I/we"), rhetorical questions, lists/bullets, and value judgments.
+
+Format Template:
+{
+  "mainTitle": "string",
+  "scenes": [
+    {
+      "id": 1,
+      "subTitle": "string",
+      "text": ["string"]
+    },
+    {
+      "id": 2,
+      "subTitle": "string",
+      "text": ["string"]
+    }
+    // ... exactly 5 scenes total
+  ]
+}
 
 Output MUST be valid JSON parsable by JSON.parse.
 `.trim();
@@ -145,15 +191,12 @@ Output MUST be valid JSON parsable by JSON.parse.
   const user = `
 Instruction: ${instruction || "(empty)"}
 
-Image guidance (for img selection only):
-- Each scene img references a square, brown/sepia story hand-sketched illustration.
-- Do not describe the image in text; only choose the appropriate "/assets/x.png".
 `.trim();
 
   const req = ai.models.generateContent({
     model: "gemini-2.5-flash",
     config: {
-      temperature: 0.4,
+      temperature: 0.6,
       responseMimeType: "application/json",
     },
     contents: [
@@ -177,52 +220,74 @@ Image guidance (for img selection only):
   try {
     parsed = JSON.parse(content);
   } catch {
-    throw new Error("LLM returned non-JSON");
+    let fixed = jsonrepair(content);
+
+    // 修复：在 scenes 数组中，如果发现孤立的 "id": N，在之前补 {
+    fixed = fixed.replace(
+      /("text":\s*\[[^\]]*\])\s*,\s*"id":/g,
+      '$1\n},\n{\n"id":'
+    );
+
+    parsed = JSON.parse(fixed);
   }
-
-
-  // 校验结构
   return DraftSchema.parse(parsed);
 }
 
-export async function generateSceneImageBase641(args: {
+export async function generateDraftImage(args: {
   mainTitle: string;
   subTitle: string;
   text: string[];
 }) {
-  // 1. 获取模型 (Gemini Pro Vision 或最新的 Imagen 模型，取决于你的权限)
-  // 注意：在 Gemini 1.5 系列中，Imagen 3 通常作为工具或独立模型调用
-  const model = genAI.getGenerativeModel({ model: "imagen-3" });
+  const apiKey = process.env.GEMINI_API_KEY;
+  // 使用 v1beta 路径下的 predict 接口
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
 
-  const prompt = `
-Square 1:1 illustration, warm brown/sepia tone, story hand-sketched style.
-Rough pencil/ink lines, minimal detail, non-photorealistic.
-No text in image. No UI/screenshots.
+  // 🌟 优化点：移除 "1:1" 文本描述，强化色调和风格关键词
+  const prompt = `A professional square-framed illustration in light sepia tones, low saturation, story hand-sketched style, rough artistic lines, vintage paper texture. No text.
+  Scene: ${args.subTitle}. 
+  Context: ${args.text.join(" ")}. 
+  [Strictly no text, no numbers, no labels, no watermarks, no 1:1 text]`.trim();
 
-Scene title: ${args.subTitle}
-Context: ${args.mainTitle}
-Scene content: ${args.text.join(" ")}
-Depict the core idea of this scene visually.
-`.trim();
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instances: [{ prompt }],
+        parameters: {
+          sampleCount: 1,
+          aspectRatio: "1:1", // 这里已指定比例，无需在 prompt 中写 "1:1"
+          outputMimeType: "image/png",
+        },
+      }),
+    });
 
-  // 2. 调用生成接口
-  const response = await model.generateContent(prompt);
+    const data = await response.json();
 
-  // 3. 提取图像数据
-  // 注意：Gemini 的返回结构与 OpenAI 不同，通常在 inlineData 中
-  const generatedPart = response.response.candidates?.[0]?.content.parts.find(
-    (part) => part.inlineData?.mimeType.startsWith("image/")
-  );
+    // 1. 检查 API 错误
+    if (data.error) {
+      throw new Error(`Google API Error: ${data.error.message}`);
+    }
 
-  if (!generatedPart || !generatedPart.inlineData) {
-    console.error("Image generation failed or no data returned:", response);
-    throw new Error("No image data returned from Gemini");
+    // 2. 检查安全过滤或空返回
+    if (!data.predictions || data.predictions.length === 0) {
+      console.error("Possible safety filter block or empty prediction:", data);
+      throw new Error("Image generation was blocked or returned no data.");
+    }
+
+    // 3. 处理 Imagen 4 的 Base64 返回格式
+    // 兼容 bytesBase64Encoded 字段或直接返回字符串的情况
+    const b64Data = data.predictions[0].bytesBase64Encoded || data.predictions[0];
+
+    if (!b64Data) {
+      throw new Error("Failed to extract Base64 data from predictions.");
+    }
+
+    return `data:image/png;base64,${b64Data}`;
+  } catch (error) {
+    console.error("Imagen 4 Generation Error:", error);
+    throw error;
   }
-
-  const b64Data = generatedPart.inlineData.data; // 这已经是 base64 字符串了
-  const mimeType = generatedPart.inlineData.mimeType;
-
-  return `data:${mimeType};base64,${b64Data}`;
 }
 
 export async function generateSceneAlternativesFromLLM(args: {
@@ -233,8 +298,7 @@ export async function generateSceneAlternativesFromLLM(args: {
   const system = `
 You are given factual content about one scene.
 
-Generate TWO entirely new versions that present the SAME factual information,
-but from clearly different narrative angles.
+Generate TWO entirely new versions from clearly different narrative angles.
 
 Return STRICT JSON with EXACT keys: conversational, professional.
 Each must contain key: text (array of 1-3 paragraphs). No other keys. No markdown. No commentary.
@@ -244,8 +308,7 @@ CRITICAL:
 - Do NOT preserve the original structure.
 - Reframe the content from new perspectives.
 - You may change the order of ideas.
-- You may introduce narrative framing (e.g., historical impact, human motivation, technological shift),
-  but do NOT introduce new factual claims.
+- You may introduce narrative framing (e.g., historical impact, human motivation, technological shift).
 - The two versions must feel like independently written texts.
 
 Constraints:
@@ -253,7 +316,7 @@ Constraints:
 - conversational: friendly, simple, approachable, but still accurate.
 - professional: formal, concise, neutral tone.
 - Avoid lists/bullets.
-- Total per version: about 80-120 words (across its paragraphs).
+- Total per version: about 75-95 words (across its paragraphs).
 Output MUST be valid JSON parsable by JSON.parse.
 `.trim();
 
@@ -670,101 +733,6 @@ Now output a new suggestion as JSON:
   return out;
 }
 
-export async function generateChatReplyFromLLM(args: {
-  selectedText: string;   // 用户选中的词/短语/句子
-  userPrompt: string;     // 用户输入的问题
-  sceneText: string[];    // 当前 scene 全文（用于限制上下文）
-}): Promise<ChatRewriteResponse> {
-  const systemPrompt = `
-You are an AI writing assistant working inside a script editor.
-
-GOAL:
-Help the user understand and improve the CURRENT script.
-
-SCOPE (allowed):
-- Answer questions about the script content and the selected text.
-- You MAY use brief general knowledge to explain terms/entities mentioned in the script (e.g., places, people, events),
-  as long as it helps the user work on the script.
-- The selected text may be a word/phrase or a full sentence. If the user asks “where is it/what is it/how much is it”, answer about the selected text.
-- You MAY ask one short clarification question if the user’s request is ambiguous.
-
-STRICT RULES:
-1) Do NOT answer topics unrelated to the current script OR selected text.
-2) If the user’s question can reasonably refer to the selected text or the scene text, treat it as RELATED (do not refuse).
-   Example: selected "Europe" + user asks "where is it?" => RELATED.
-3. Keep responses concise (max 3-5 sentences).
-4. If the user is clearly asking to rewrite/rephrase/improve the selected text,
-   return type = "rewrite" and provide a clean replacement sentence.
-5) If the user asks for explanation/meaning/facts/background/feedback, return type="advice" and replacement=null.
-6) If the user request is ambiguous (e.g., "where is it?" but no clear referent), return type="clarify"
-   with one short question, replacement=null.
-7. Always return STRICT JSON only. No markdown. No extra text.
-
-JSON format:
-{
-  "type": "rewrite" | "advice" | "clarify" | "refuse",
-  "answer": string,
-  "replacement": string | null
-}
-
-If type is not "rewrite", replacement MUST be null.
-If type is "rewrite", replacement MUST be a single clean sentence.
-`.trim();
-
-  const userPromptFormatted = `
-Full scene:
-${args.sceneText.join("\n")}
-
-Selected text:
-"${args.selectedText}"
-
-User request:
-"${args.userPrompt}"
-`.trim();
-
-  const req = ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    config: {
-      temperature: 0.4,
-      responseMimeType: "application/json",
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: `SYSTEM:\n${systemPrompt}\n\nUSER:\n${userPromptFormatted}\n\nReturn ONLY valid JSON.`,
-          },
-        ],
-      },
-    ],
-  });
-
-  const resp = await req;
-  const raw = (resp.text ?? "").trim();
-
-  try {
-    const parsed = JSON.parse(raw);
-
-    const type = String(parsed.type ?? "").trim();
-    const answer = String(parsed.answer ?? "").trim();
-
-    return {
-      type: type as ChatRewriteResponse["type"],
-      answer,
-      replacement:
-        type === "rewrite" ? String(parsed.replacement ?? "").trim() : null,
-    };
-  } catch {
-    // 万一模型没按 JSON 输出，兜底
-    return {
-      type: "advice",
-      answer: raw,
-      replacement: null,
-    };
-  }
-}
-
 export async function generateChatReplyFromLLM2(args: {
   userPrompt: string;   // 用户输入的问题
   sceneText?: string[]; // 可选：当前 scene 全文（当作上下文）
@@ -832,48 +800,6 @@ User message:
   } catch {
     // 兜底：模型没按 JSON 输出时，直接当文本回传
     return { answer: raw || "No response." };
-  }
-}
-
-export async function generateSceneImageBase642(args: {
-  mainTitle: string;
-  subTitle: string;
-  text: string[];
-}) {
-  // 注意：在 AI Studio 中，Imagen 3 是独立模型
-  // 如果 gemini-2.0-flash 等模型不支持直接画图，需指定 imagen 模型
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
-
-  const prompt = `
-Square 1:1 illustration, warm brown/sepia tone, story hand-sketched style.
-Rough pencil/ink lines, minimal detail, non-photorealistic.
-No text in image. No UI/screenshots.
-
-Scene title: ${args.subTitle}
-Context: ${args.mainTitle}
-Scene content: ${args.text.join(" ")}
-Depict the core idea of this scene visually.
-`.trim();
-
-  try {
-    // 调用生成接口
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    });
-    const response = await result.response;
-    const part = response.candidates?.[0]?.content.parts.find(p => p.inlineData);
-
-    if (!part || !part.inlineData) {
-      throw new Error("模型响应成功但未包含图像数据。请检查 API Key 的 Imagen 权限。");
-    }
-
-    return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-  } catch (error: any) {
-    if (error.status === 404) {
-      console.error("确认：该 API Key 无法访问 imagen-3 模型。");
-      // 这里的报错意味着你需要去 Google AI Studio 确认模型列表中是否有 Imagen
-    }
-    throw error;
   }
 }
 
